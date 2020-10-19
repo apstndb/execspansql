@@ -51,7 +51,7 @@ func _main() error {
 	redactRows := flag.Bool("redact-rows", false, "Redact result rows from output")
 
 	var params stringList
-	flag.Var(&params, "param", "[name]=[Cloud Spanner type or literal]")
+	flag.Var(&params, "param", "[name]=[Cloud Spanner type(PLAN only) or literal]")
 
 	flag.Parse()
 
@@ -118,7 +118,7 @@ func _main() error {
 	}
 	defer client.Close()
 
-	paramMap, err := generateParams(params)
+	paramMap, err := generateParams(params, mode == spannerpb.ExecuteSqlRequest_PLAN)
 	if err != nil {
 		return err
 	}
@@ -240,15 +240,15 @@ func parseType(s string) (typ ast.Type, err error) {
 	return p.ParseType()
 }
 
-func generateParams(ss []string) (map[string]interface{}, error) {
+func generateParams(ss []string, permitType bool) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	for _, s := range ss {
 		split := strings.SplitN(s, "=", 2)
 		name := split[0]
 		code := split[1]
-		if expr, err := parseExpr(code); err == nil {
-			log.Println(name, "ast.Expr.SQL():", expr.SQL())
-			value, err := exprToGenericColumnValue(expr)
+		if typ, err := parseType(code); permitType && err == nil {
+			log.Println(name, "ast.Type.SQL():", typ.SQL())
+			value, err := typeToGenericColumnValue(typ)
 			if err != nil {
 				return nil, err
 			}
@@ -256,9 +256,9 @@ func generateParams(ss []string) (map[string]interface{}, error) {
 			log.Println(name, "spannerpb.Type:", value.Type)
 			result[name] = value
 			continue
-		} else if typ, err := parseType(code); err == nil {
-			log.Println(name, "ast.Type.SQL():", typ.SQL())
-			value, err := typeToGenericColumnValue(typ)
+		} else if expr, err := parseExpr(code); err == nil {
+			log.Println(name, "ast.Expr.SQL():", expr.SQL())
+			value, err := exprToGenericColumnValue(expr)
 			if err != nil {
 				return nil, err
 			}
