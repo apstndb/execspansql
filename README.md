@@ -1,3 +1,5 @@
+# execspansql
+
 Yet another `gcloud spanner databases execute-sql` replacement for better composability.
 
 ## Usage: 
