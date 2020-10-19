@@ -35,7 +35,7 @@ There are examples omitting some required options.
 Many Cloud Spanner clients don't support parameter.
 Without modifications, query which have parameters are impossible to execute and query whose parameters' types are `STRUCT` or `ARRAY` are impossible to show query plans.
 
-execspansql supports query with query parameters.
+execspansql supports query parameters.
 
 #### PLAN with complex typed parameters
 
