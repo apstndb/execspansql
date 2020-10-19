@@ -39,6 +39,8 @@ execspansql supports query parameters.
 
 #### PLAN with complex typed parameters
 
+You can use type syntax to plan a query.
+
 ```
 $ execspansql --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' --query-mode=PLAN --param='arr=ARRAY<STRUCT<STRING>>'
 ```
@@ -47,6 +49,10 @@ $ execspansql --sql='SELECT @str.*' --query-mode=PROFILE --param='str=STRUCT<Fir
 ```
 
 #### PROFILE with complex typed parameterized values 
+
+You can use subset of literal syntax to execute a query.
+
+Note: It only emulates literals and doesn't emulate coercion.
 
 ```
 $ execspansql --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' --param='arr=[STRUCT<pk INT64, col STRING>(1, "foo"), (42, "foobar")]' --query-mode=PROFILE
