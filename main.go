@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"execspansql/protoyaml"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/apstndb/execspansql/internal/protoyaml"
 
 	"cloud.google.com/go/spanner"
 	"github.com/MakeNowJust/memefish/pkg/ast"

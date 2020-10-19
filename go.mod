@@ -1,4 +1,4 @@
-module execspansql
+module github.com/apstndb/execspansql
 
 go 1.15
 
