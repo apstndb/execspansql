@@ -156,25 +156,39 @@ func _main() error {
 	if err != nil {
 		return err
 	}
-	s, err := structpb.NewStruct(rowIter.QueryStats)
-	if err != nil {
-		return err
-	}
+
+	// Leave null if fields are not populated
 	var metadata *spannerpb.ResultSetMetadata
 	if rowType != nil {
 		metadata = &spannerpb.ResultSetMetadata{
 			RowType: &spannerpb.StructType{Fields: rowType},
 		}
 	}
+
 	rs := &spannerpb.ResultSet{
 		Rows:     rows,
 		Metadata: metadata,
-		Stats: &spannerpb.ResultSetStats{
-			QueryPlan:  rowIter.QueryPlan,
-			QueryStats: s,
-			RowCount:   &spannerpb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount},
-		},
 	}
+
+	var queryStats *structpb.Struct
+	if rowIter.QueryStats != nil {
+		queryStats, err = structpb.NewStruct(rowIter.QueryStats)
+		if err != nil {
+			return err
+		}
+	}
+
+	if rowIter.QueryPlan != nil || queryStats != nil {
+		rs.Stats = &spannerpb.ResultSetStats{
+			QueryPlan:  rowIter.QueryPlan,
+			QueryStats: queryStats,
+		}
+	}
+
+	if rowIter.RowCount != 0 {
+		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount}
+	}
+
 	var str string
 	switch *format {
 	case "json", "":
