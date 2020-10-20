@@ -11,7 +11,12 @@ import (
 	"strconv"
 
 	"github.com/apstndb/execspansql/internal/protoyaml"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
+
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	"go.uber.org/zap"
 
 	"cloud.google.com/go/spanner"
 	"github.com/MakeNowJust/memefish/pkg/ast"
@@ -56,6 +61,7 @@ type opts struct {
 	JqRawOutput   bool              `long:"jq-raw-output" description:"(--raw-output of jq)"`
 	JqFromFile    string            `long:"jq-from-file" description:"(--from-file of jq)"`
 	Param         map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
+	LogGrpc       bool              `long:"log-grpc"`
 }
 
 func processFlags() (o opts, err error) {
@@ -80,6 +86,28 @@ func processFlags() (o opts, err error) {
 	}
 	return o, nil
 }
+
+func logGrpcClientOptions() []option.ClientOption {
+	zapDevelopmentConfig := zap.NewDevelopmentConfig()
+	zapDevelopmentConfig.DisableCaller = true
+	zapLogger, _ := zapDevelopmentConfig.Build(zap.Fields())
+
+	return []option.ClientOption{
+		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
+			grpc_zap.UnaryClientInterceptor(zapLogger),
+			grpc_zap.PayloadUnaryClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
+				return true
+			}),
+		)),
+		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
+			grpc_zap.StreamClientInterceptor(zapLogger),
+			grpc_zap.PayloadStreamClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
+				return true
+			}),
+		)),
+	}
+}
+
 func _main() error {
 	ctx := context.Background()
 
@@ -129,6 +157,11 @@ func _main() error {
 		}
 	}
 
+	var copts []option.ClientOption
+	if o.LogGrpc {
+		copts = logGrpcClientOptions()
+	}
+
 	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", o.Project, o.Instance, o.Positional.Database)
 	client, err := spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
 		SessionPoolConfig: spanner.SessionPoolConfig{
@@ -137,8 +170,7 @@ func _main() error {
 			WriteSessions:       0,
 			TrackSessionHandles: true,
 		},
-	},
-	)
+	}, copts...)
 	if err != nil {
 		return err
 	}
