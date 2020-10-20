@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -12,11 +13,13 @@ import (
 	"strings"
 
 	"github.com/apstndb/execspansql/internal/protoyaml"
+	"gopkg.in/yaml.v2"
 
 	"cloud.google.com/go/spanner"
 	"github.com/MakeNowJust/memefish/pkg/ast"
 	"github.com/MakeNowJust/memefish/pkg/parser"
 	"github.com/MakeNowJust/memefish/pkg/token"
+	"github.com/itchyny/gojq"
 	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -39,6 +42,15 @@ func main() {
 	}
 }
 
+var debuglog *log.Logger
+func init() {
+	if os.Getenv("DEBUG") != "" {
+		debuglog = log.New(os.Stderr, "", log.LstdFlags)
+	} else {
+		debuglog = log.New(ioutil.Discard, "", log.LstdFlags)
+	}
+}
+
 func _main() error {
 	ctx := context.Background()
 	sql := flag.String("sql", "", "SQL query text; exclusive with --file.")
@@ -49,6 +61,10 @@ func _main() error {
 	queryMode := flag.String("query-mode", "", "Query mode; possible values(case-insensitive): NORMAL, PLAN, PROFILE; default=PLAN")
 	format := flag.String("format", "", "Output format; possible values(case-insensitive): json, json-compact, yaml; default=json")
 	redactRows := flag.Bool("redact-rows", false, "Redact result rows from output")
+	jqFilter := flag.String("jq-filter", "", "jq filter")
+	compactOutput := flag.Bool("compact-output", false, "Compact JSON output(--compact-output of jq)")
+	jqRawOutput := flag.Bool("jq-raw-output", false, "(--raw-output of jq)")
+	jqFromFile := flag.String("jq-from-file", "", "(--from-file of jq)")
 
 	var params stringList
 	flag.Var(&params, "param", "[name]=[Cloud Spanner type(PLAN only) or literal]")
@@ -78,6 +94,30 @@ func _main() error {
 		os.Exit(1)
 	}
 
+	if *jqFilter != "" && *jqFromFile != "" {
+		fmt.Fprintln(os.Stderr, "--jq-filter and --jq-from-file are exclusive")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	var jqQuery *gojq.Query
+	if *jqFilter != "" {
+		var err error
+		jqQuery, err = gojq.Parse(*jqFilter)
+		if err != nil {
+			return err
+		}
+	}
+	if *jqFromFile != "" {
+		b, err := ioutil.ReadFile(*jqFromFile)
+		if err != nil {
+			return err
+		}
+		jqQuery, err = gojq.Parse(string(b))
+		if err != nil {
+			return err
+		}
+	}
 	var mode spannerpb.ExecuteSqlRequest_QueryMode
 	switch strings.ToUpper(*queryMode) {
 	// default is PLAN
@@ -88,7 +128,7 @@ func _main() error {
 	case "NORMAL":
 		mode = spannerpb.ExecuteSqlRequest_NORMAL
 	default:
-		log.Println("unknown query-mode:", *queryMode)
+		fmt.Fprintln(os.Stderr, "unknown query-mode:", *queryMode)
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -96,9 +136,9 @@ func _main() error {
 	switch strings.ToLower(*format) {
 	case "":
 		*format = "json"
-	case "json", "yaml", "json-compact":
+	case "json", "yaml":
 	default:
-		log.Println("unknown format:", *format)
+		debuglog.Println("unknown format:", *format)
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -189,24 +229,72 @@ func _main() error {
 		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount}
 	}
 
-	var str string
-	switch *format {
-	case "json", "":
-		str = protojson.Format(rs) + "\n"
-	case "json-compact":
+	if jqQuery != nil {
+		// input := map[string]interface{}{"foo": []interface{}{1, 2, 3}}
+		var object map[string]interface{}
 		b, err := protojson.Marshal(rs)
 		if err != nil {
 			return err
 		}
-		str = string(b) + "\n"
-	case "yaml":
-		b, err := protoyaml.Marshal(rs)
+		err = json.Unmarshal(b, &object)
 		if err != nil {
 			return err
 		}
-		str = string(b)
+
+		iter := jqQuery.Run(object) // or query.RunWithContext
+
+		yamlenc := yaml.NewEncoder(os.Stdout)
+		jsonenc := json.NewEncoder(os.Stdout)
+		if !*compactOutput {
+			jsonenc.SetIndent("", "  ")
+		}
+		for {
+			v, ok := iter.Next()
+			if !ok {
+				break
+			}
+			if err, ok := v.(error); ok {
+				return err
+			}
+			switch *format {
+			case "yaml":
+				err := yamlenc.Encode(v)
+				if err != nil {
+					return err
+				}
+			case "json":
+				if s, ok := v.(string); ok && *jqRawOutput {
+					fmt.Println(s)
+				} else {
+					err := jsonenc.Encode(v)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	} else {
+		var str string
+		switch *format {
+		case "json", "":
+			if *compactOutput {
+				b, err := protojson.Marshal(rs)
+				if err != nil {
+					return err
+				}
+				str = string(b) + "\n"
+			} else {
+				str = protojson.Format(rs) + "\n"
+			}
+		case "yaml":
+			b, err := protoyaml.Marshal(rs)
+			if err != nil {
+				return err
+			}
+			str = string(b)
+		}
+		fmt.Print(str)
 	}
-	fmt.Print(str)
 	return nil
 }
 
@@ -247,23 +335,23 @@ func generateParams(ss []string, permitType bool) (map[string]interface{}, error
 		name := split[0]
 		code := split[1]
 		if typ, err := parseType(code); permitType && err == nil {
-			log.Println(name, "ast.Type.SQL():", typ.SQL())
+			debuglog.Println(name, "ast.Type.SQL():", typ.SQL())
 			value, err := typeToGenericColumnValue(typ)
 			if err != nil {
 				return nil, err
 			}
 
-			log.Println(name, "spannerpb.Type:", value.Type)
+			debuglog.Println(name, "spannerpb.Type:", value.Type)
 			result[name] = value
 			continue
 		} else if expr, err := parseExpr(code); err == nil {
-			log.Println(name, "ast.Expr.SQL():", expr.SQL())
+			debuglog.Println(name, "ast.Expr.SQL():", expr.SQL())
 			value, err := exprToGenericColumnValue(expr)
 			if err != nil {
 				return nil, err
 			}
 
-			log.Println(name, "spannerpb.Type:", value.Type)
+			debuglog.Println(name, "spannerpb.Type:", value.Type)
 			result[name] = value
 			continue
 		} else {
