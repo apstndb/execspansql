@@ -56,7 +56,7 @@ type opts struct {
 	JqRawOutput   bool              `long:"jq-raw-output" description:"(--raw-output of jq)"`
 	JqFromFile    string            `long:"jq-from-file" description:"(--from-file of jq)"`
 	Param         map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
-	LogGrpc       bool              `long:"log-grpc"`
+	LogGrpc       bool              `long:"log-grpc" description:"Show gRPC logs"`
 }
 
 func processFlags() (o opts, err error) {
@@ -89,16 +89,16 @@ func logGrpcClientOptions() []option.ClientOption {
 
 	return []option.ClientOption{
 		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
-			grpc_zap.UnaryClientInterceptor(zapLogger),
 			grpc_zap.PayloadUnaryClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
 				return true
 			}),
+			grpc_zap.UnaryClientInterceptor(zapLogger),
 		)),
 		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
-			grpc_zap.StreamClientInterceptor(zapLogger),
 			grpc_zap.PayloadStreamClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
 				return true
 			}),
+			grpc_zap.StreamClientInterceptor(zapLogger),
 		)),
 	}
 }
