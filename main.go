@@ -24,17 +24,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-type stringList []string
-
-func (s *stringList) String() string {
-	return fmt.Sprint(*s)
-}
-
-func (s *stringList) Set(v string) error {
-	*s = append(*s, v)
-	return nil
-}
-
 func main() {
 	if err := _main(); err != nil {
 		log.Fatalln(err)
