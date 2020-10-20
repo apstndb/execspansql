@@ -2,6 +2,12 @@
 
 Yet another `gcloud spanner databases execute-sql` replacement for better composability.
 
+* Support query parameters
+* Embedded jq
+* Emit gRPC message logs
+
+This tool is still pre-release quality and none of guarantees.
+
 ## Usage: 
 
 ```
