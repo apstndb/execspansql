@@ -8,7 +8,7 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
 
 This tool is still pre-release quality and none of guarantees.
 
-## Usage: 
+## Usage
 
 ```
 Usage:
