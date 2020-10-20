@@ -52,10 +52,14 @@ execspansql supports query parameters.
 You can use type syntax to plan a query.
 
 ```
-$ execspansql --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' --query-mode=PLAN --param='arr=ARRAY<STRUCT<STRING>>'
+$ execspansql --query-mode=PLAN \
+              --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
+              --param='arr:ARRAY<STRUCT<STRING>>'
 ```
 ```
-$ execspansql --sql='SELECT @str.*' --query-mode=PROFILE --param='str=STRUCT<FirstName STRING, LastName STRING>'
+$ execspansql --query-mode=PROFILE \
+              --sql='SELECT @str.*' \
+              --param='str:STRUCT<FirstName STRING, LastName STRING>'
 ```
 
 #### PROFILE with complex typed parameterized values 
@@ -65,12 +69,48 @@ You can use subset of literal syntax to execute a query.
 Note: It only emulates literals and doesn't emulate coercion.
 
 ```
-$ execspansql --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' --param='arr=[STRUCT<pk INT64, col STRING>(1, "foo"), (42, "foobar")]' --query-mode=PROFILE
+$ execspansql --query-mode=PROFILE \
+              --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
+              --param='arr:[STRUCT<pk INT64, col STRING>(1, "foo"), (42, "foobar")]'
 ```
 ```
-$ execspansql --sql='SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@names)' \
-              --param='names=[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]' \
-              --query-mode=PROFILE
+$ execspansql --query-mode=PROFILE \
+              --sql='SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@names)' \
+              --param='names:[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
+```
+
+### Embedded jq
+
+execspansql can process output using embedded [gojq](https://github.com/itchyny/gojq) by `--jq-filter` flag.
+
+#### Example: Extract QueryPlan
+
+[rendertree] command takes QueryPlan, and it can be extracted by jq filter.
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=json \
+              --sql='SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}' \
+              --jq-filter='.stats.queryPlan' \
+  | rendertree --mode=PROFILE 
++-----+----------------------------------------------------------------------------+------+-------+------------+
+| ID  | Operator                                                                   | Rows | Exec. | Latency    |
++-----+----------------------------------------------------------------------------+------+-------+------------+
+|   0 | Distributed Union                                                          |    5 |     1 | 0.47 msecs |
+|  *1 | +- Distributed Cross Apply                                                 |    5 |     1 | 0.44 msecs |
+|   2 |    +- Create Batch                                                         |      |       |            |
+|   3 |    |  +- Local Distributed Union                                           |    5 |     1 | 0.21 msecs |
+|   4 |    |     +- Compute Struct                                                 |    5 |     1 | 0.19 msecs |
+|   5 |    |        +- Index Scan (Full scan: true, Index: SingersByFirstLastName) |    5 |     1 | 0.18 msecs |
+|  13 |    +- [Map] Serialize Result                                               |    5 |     1 | 0.13 msecs |
+|  14 |       +- Cross Apply                                                       |    5 |     1 | 0.12 msecs |
+|  15 |          +- Batch Scan (Batch: $v2)                                        |    5 |     1 | 0.01 msecs |
+|  19 |          +- [Map] Local Distributed Union                                  |    5 |     5 |  0.1 msecs |
+| *20 |             +- FilterScan                                                  |    5 |     5 | 0.09 msecs |
+|  21 |                +- Table Scan (Table: Singers)                              |    5 |     5 | 0.08 msecs |
++-----+----------------------------------------------------------------------------+------+-------+------------+
+Predicates(identified by ID):
+  1: Split Range: ($SingerId' = $SingerId)
+ 20: Seek Condition: ($SingerId' = $batched_SingerId)
 ```
 
 ## Limitations
