@@ -610,34 +610,14 @@ func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*spannerpb.Type, error) {
 	}
 }
 
+// valueFromSpannerpbType generate a minimum valid value for a type.
 func valueFromSpannerpbType(typ *spannerpb.Type) (*structpb.Value, error) {
 	switch typ.GetCode() {
-	case spannerpb.TypeCode_BOOL:
-		return structpb.NewBoolValue(false), nil
-	case spannerpb.TypeCode_INT64:
-		return structpb.NewStringValue("0"), nil
-	case spannerpb.TypeCode_FLOAT64:
-		return structpb.NewNumberValue(0), nil
-	case spannerpb.TypeCode_STRING:
-		return structpb.NewStringValue(""), nil
-	case spannerpb.TypeCode_BYTES:
-		return structpb.NewStringValue(""), nil
-	case spannerpb.TypeCode_DATE:
-		return structpb.NewStringValue("1970-01-01"), nil
-	case spannerpb.TypeCode_TIMESTAMP:
-		return structpb.NewStringValue("1970-01-01T00:00:00Z"), nil
-	case spannerpb.TypeCode_NUMERIC:
-		return structpb.NewStringValue("0"), nil
-	case spannerpb.TypeCode_ARRAY:
-		return structpb.NewListValue(&structpb.ListValue{}), nil
+	// Only STRUCT needs a non-null value.
 	case spannerpb.TypeCode_STRUCT:
 		var values []*structpb.Value
-		for _, f := range typ.StructType.GetFields() {
-			v, err := valueFromSpannerpbType(f.GetType())
-			if err != nil {
-				return nil, err
-			}
-			values = append(values, v)
+		for range typ.StructType.GetFields() {
+			values = append(values, structpb.NewNullValue())
 		}
 		return structpb.NewListValue(&structpb.ListValue{Values: values}), nil
 	default:
