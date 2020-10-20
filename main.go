@@ -155,28 +155,24 @@ func _main() error {
 	var rowType []*spannerpb.StructType_Field
 	var rows []*structpb.ListValue
 	err = rowIter.Do(func(r *spanner.Row) error {
-		isFirst := rowType == nil
-		if !isFirst && o.RedactRows {
-			return nil
-		}
-		var row []*structpb.Value
-		for i, name := range r.ColumnNames() {
-			var v spanner.GenericColumnValue
-			err := r.Column(i, &v)
+		var err error
+		if rowType == nil {
+			rowType, err = extractRowType(r)
 			if err != nil {
 				return err
 			}
-			row = append(row, v.Value)
-			if isFirst {
-				rowType = append(rowType, &spannerpb.StructType_Field{
-					Name: name,
-					Type: v.Type,
-				})
-			}
 		}
-		if !o.RedactRows {
-			rows = append(rows, &structpb.ListValue{Values: row})
+
+		if o.RedactRows {
+			return nil
 		}
+
+		vs, err := rowValues(r)
+		if err != nil {
+			return err
+		}
+
+		rows = append(rows, &structpb.ListValue{Values: vs})
 		return nil
 	})
 	if err != nil {
@@ -578,4 +574,33 @@ func valueFromSpannerpbType(typ *spannerpb.Type) (*structpb.Value, error) {
 	default:
 		return structpb.NewNullValue(), nil
 	}
+}
+
+func extractRowType(r *spanner.Row) ([]*spannerpb.StructType_Field, error) {
+	var rowType []*spannerpb.StructType_Field
+	for i, name := range r.ColumnNames() {
+		var v spanner.GenericColumnValue
+		if err := r.Column(i, &v); err != nil {
+			return nil, err
+		}
+
+		rowType = append(rowType, &spannerpb.StructType_Field{
+			Name: name,
+			Type: v.Type,
+		})
+	}
+	return rowType, nil
+}
+
+func rowValues(r *spanner.Row) ([]*structpb.Value, error) {
+	var vs []*structpb.Value
+	for i := 0; i < r.Size(); i++ {
+		var gcv spanner.GenericColumnValue
+		err := r.Column(i, &gcv)
+		if err != nil {
+			return nil, err
+		}
+		vs = append(vs, gcv.Value)
+	}
+	return vs, nil
 }
