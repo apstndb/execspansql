@@ -62,9 +62,13 @@ type opts struct {
 func processFlags() (o opts, err error) {
 	flagParser := flags.NewParser(&o, flags.Default)
 	defer func() {
-		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
-			flagParser.WriteHelp(os.Stderr)
+		if err == nil {
+			return
 		}
+		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
+			return
+		}
+		flagParser.WriteHelp(os.Stderr)
 	}()
 	_, err = flagParser.Parse()
 	if err != nil {
