@@ -55,12 +55,12 @@ execspansql supports query parameters.
 You can use type syntax to plan a query.
 
 ```
-$ execspansql --query-mode=PLAN \
+$ execspansql ${DATABASE_ID} --query-mode=PLAN \
               --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
               --param='arr:ARRAY<STRUCT<STRING>>'
 ```
 ```
-$ execspansql --query-mode=PROFILE \
+$ execspansql ${DATABASE_ID} --query-mode=PLAN \
               --sql='SELECT @str.*' \
               --param='str:STRUCT<FirstName STRING, LastName STRING>'
 ```
@@ -72,12 +72,12 @@ You can use subset of literal syntax to execute a query.
 Note: It only emulates literals and doesn't emulate coercion.
 
 ```
-$ execspansql --query-mode=PROFILE \
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE \
               --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
               --param='arr:[STRUCT<pk INT64, col STRING>(1, "foo"), (42, "foobar")]'
 ```
 ```
-$ execspansql --query-mode=PROFILE \
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE \
               --sql='SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@names)' \
               --param='names:[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
 ```
