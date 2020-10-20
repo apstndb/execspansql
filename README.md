@@ -84,7 +84,7 @@ $ execspansql --query-mode=PROFILE \
 
 ### Embedded jq
 
-execspansql can process output using embedded [gojq](https://github.com/itchyny/gojq) by `--jq-filter` flag.
+execspansql can process output using embedded [gojq](https://github.com/itchyny/gojq) using `--jq-filter` flag.
 
 #### Example: Extract QueryPlan
 
