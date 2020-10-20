@@ -44,7 +44,7 @@ type opts struct {
 	Positional struct {
 		Database string `positional-arg-name:"database" description:"(required) ID of the database." required:"true"`
 	} `positional-args:"yes"`
-	Sql           string            `long:"sql" description:"SQL query text; exclusive with --file."`
+	Sql           string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
 	SqlFile       string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
 	Project       string            `long:"project" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
 	Instance      string            `long:"instance" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
