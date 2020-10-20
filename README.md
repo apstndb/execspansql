@@ -116,6 +116,32 @@ Predicates(identified by ID):
  20: Seek Condition: ($SingerId' = $batched_SingerId)
 ```
 
+#### Example: Complex jq filter
+
+[plan.jq](examples/plan.jq) render query plan tree in pure jq.
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=json \
+  --sql='SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}' \
+  --jq-from-file=examples/plan.jq --jq-raw-output
+ *0 Distributed Union
+ *1   Distributed Cross Apply
+  2     Create Batch
+  3       Local Distributed Union
+  4         Compute Struct
+  5           Index Scan (Full scan: true, Index: SingersByFirstLastName)
+ 13     [Map] Serialize Result
+ 14       Cross Apply
+ 15         Batch Scan (Batch: $v2)
+ 19         [Map] Local Distributed Union
+*20           FilterScan
+ 21             Table Scan (Table: Singers)
+Predicates:
+  0: Split Range: true
+  1: Split Range: ($SingerId' = $SingerId)
+ 20: Seek Condition: ($SingerId' = $batched_SingerId)
+```
+
 ## Limitations
 
 * DML and Partitioned DML are not yet supported
