@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/apstndb/execspansql/internal/protoyaml"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
@@ -114,23 +113,25 @@ func _main() error {
 	if err != nil {
 		os.Exit(1)
 	}
+
+	// Use jqQuery even if empty filter
 	var jqQuery *gojq.Query
-	if o.JqFilter != "" {
-		var err error
-		jqQuery, err = gojq.Parse(o.JqFilter)
-		if err != nil {
-			return err
-		}
-	}
 	if o.JqFromFile != "" {
 		b, err := ioutil.ReadFile(o.JqFromFile)
 		if err != nil {
 			return err
 		}
-		jqQuery, err = gojq.Parse(string(b))
+		jq, err := gojq.Parse(string(b))
 		if err != nil {
 			return err
 		}
+		jqQuery = jq
+	} else {
+		jq, err := gojq.Parse(o.JqFilter)
+		if err != nil {
+			return err
+		}
+		jqQuery = jq
 	}
 	var mode spannerpb.ExecuteSqlRequest_QueryMode
 	switch o.QueryMode {
@@ -229,27 +230,6 @@ func _main() error {
 				}
 			}
 		}
-	} else {
-		var str string
-		switch o.Format {
-		case "json":
-			if o.CompactOutput {
-				b, err := protojson.Marshal(rs)
-				if err != nil {
-					return err
-				}
-				str = string(b) + "\n"
-			} else {
-				str = protojson.Format(rs) + "\n"
-			}
-		case "yaml":
-			b, err := protoyaml.Marshal(rs)
-			if err != nil {
-				return err
-			}
-			str = string(b)
-		}
-		fmt.Print(str)
 	}
 	return nil
 }
