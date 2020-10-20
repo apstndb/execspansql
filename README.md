@@ -11,6 +11,9 @@ This tool is still pre-release quality and none of guarantees.
 ## Usage
 
 ```
+$ go get -u github.com/apstndb/execspansql
+```
+```
 Usage:
   execspansql [OPTIONS] [database]
 
