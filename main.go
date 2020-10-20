@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/apstndb/execspansql/internal/protoyaml"
 	"gopkg.in/yaml.v2"
@@ -69,39 +68,35 @@ type opts struct {
 	Param map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
 }
 
-func _main() error {
-	ctx := context.Background()
-	var o opts
+func processFlags() (o opts, err error) {
 	flagParser := flags.NewParser(&o, flags.Default)
-	_, err := flagParser.Parse()
+	defer func() {
+		if err != nil {
+			flagParser.WriteHelp(os.Stderr)
+		}
+	}()
+	_, err = flagParser.Parse()
 	if err != nil {
-		os.Exit(1)
+		return o, err
 	}
 
-	var query string
-	switch {
-	case o.Sql != "" && o.SqlFile != "":
-		flagParser.WriteHelp(os.Stderr)
-		os.Exit(1)
-	case o.Sql != "":
-		query = o.Sql
-	case o.SqlFile != "":
-		if b, err := ioutil.ReadFile(o.SqlFile); err != nil {
-			return err
-		} else {
-			query = string(b)
-		}
-	default:
-		flagParser.WriteHelp(os.Stderr)
-		os.Exit(1)
+	if (o.Sql != "" && o.SqlFile != "") || (o.Sql == "" && o.SqlFile == "") {
+		return o, err
 	}
 
 	if o.JqFilter != "" && o.JqFromFile != "" {
 		fmt.Fprintln(os.Stderr, "--jq-filter and --jq-from-file are exclusive")
-		flagParser.WriteHelp(os.Stderr)
+		return o, err
+	}
+	return o, nil
+}
+func _main() error {
+	ctx := context.Background()
+
+	o, err := processFlags()
+	if err != nil {
 		os.Exit(1)
 	}
-
 	var jqQuery *gojq.Query
 	if o.JqFilter != "" {
 		var err error
@@ -121,8 +116,7 @@ func _main() error {
 		}
 	}
 	var mode spannerpb.ExecuteSqlRequest_QueryMode
-	switch strings.ToUpper(o.QueryMode) {
-	// default is PLAN
+	switch o.QueryMode {
 	case "PLAN":
 		mode = spannerpb.ExecuteSqlRequest_PLAN
 	case "PROFILE":
@@ -130,9 +124,19 @@ func _main() error {
 	case "NORMAL":
 		mode = spannerpb.ExecuteSqlRequest_NORMAL
 	default:
-		fmt.Fprintln(os.Stderr, "unknown query-mode:", o.QueryMode)
-		flagParser.WriteHelp(os.Stderr)
-		os.Exit(1)
+		return fmt.Errorf("unknown query-mode: %s", o.QueryMode)
+	}
+
+	var query string
+	switch {
+	case o.Sql != "":
+		query = o.Sql
+	case o.SqlFile != "":
+		if b, err := ioutil.ReadFile(o.SqlFile); err != nil {
+			return err
+		} else {
+			query = string(b)
+		}
 	}
 
 	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", o.Project, o.Instance, o.Positional.Database)
