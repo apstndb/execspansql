@@ -149,66 +149,9 @@ func _main() error {
 		return err
 	}
 
-	rowIter := client.Single().QueryWithOptions(ctx, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{
-		Mode: &mode,
-	})
-	var rowType []*spannerpb.StructType_Field
-	var rows []*structpb.ListValue
-	err = rowIter.Do(func(r *spanner.Row) error {
-		var err error
-		if rowType == nil {
-			rowType, err = extractRowType(r)
-			if err != nil {
-				return err
-			}
-		}
-
-		if o.RedactRows {
-			return nil
-		}
-
-		vs, err := rowValues(r)
-		if err != nil {
-			return err
-		}
-
-		rows = append(rows, &structpb.ListValue{Values: vs})
-		return nil
-	})
+	rs, err := consumeRowIter(client.Single().QueryWithOptions(ctx, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}), o.RedactRows)
 	if err != nil {
 		return err
-	}
-
-	// Leave null if fields are not populated
-	var metadata *spannerpb.ResultSetMetadata
-	if rowType != nil {
-		metadata = &spannerpb.ResultSetMetadata{
-			RowType: &spannerpb.StructType{Fields: rowType},
-		}
-	}
-
-	rs := &spannerpb.ResultSet{
-		Rows:     rows,
-		Metadata: metadata,
-	}
-
-	var queryStats *structpb.Struct
-	if rowIter.QueryStats != nil {
-		queryStats, err = structpb.NewStruct(rowIter.QueryStats)
-		if err != nil {
-			return err
-		}
-	}
-
-	if rowIter.QueryPlan != nil || queryStats != nil {
-		rs.Stats = &spannerpb.ResultSetStats{
-			QueryPlan:  rowIter.QueryPlan,
-			QueryStats: queryStats,
-		}
-	}
-
-	if rowIter.RowCount != 0 {
-		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount}
 	}
 
 	if jqQuery != nil {
@@ -258,7 +201,7 @@ func _main() error {
 	} else {
 		var str string
 		switch o.Format {
-		case "json", "":
+		case "json":
 			if o.CompactOutput {
 				b, err := protojson.Marshal(rs)
 				if err != nil {
@@ -278,6 +221,100 @@ func _main() error {
 		fmt.Print(str)
 	}
 	return nil
+}
+
+func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*spannerpb.ResultSet, error) {
+	consumeResult, err := consumeRowIterImpl(rowIter, redactRows)
+	if err != nil {
+		return nil, err
+	}
+
+	rs, err := convertToResultSet(consumeResult)
+	if err != nil {
+		return nil, err
+	}
+	return rs, nil
+}
+
+func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultSet, error) {
+	// Leave null if fields are not populated
+	var metadata *spannerpb.ResultSetMetadata
+	if consumeResult.RowType != nil {
+		metadata = &spannerpb.ResultSetMetadata{
+			RowType: &spannerpb.StructType{Fields: consumeResult.RowType},
+		}
+	}
+
+	rs := &spannerpb.ResultSet{
+		Rows:     consumeResult.Rows,
+		Metadata: metadata,
+	}
+
+	var queryStats *structpb.Struct
+	if consumeResult.QueryStats != nil {
+		qs, err := structpb.NewStruct(consumeResult.QueryStats)
+		if err != nil {
+			return nil, err
+		}
+		queryStats = qs
+
+	}
+
+	if consumeResult.QueryPlan != nil || queryStats != nil {
+		rs.Stats = &spannerpb.ResultSetStats{
+			QueryPlan:  consumeResult.QueryPlan,
+			QueryStats: queryStats,
+		}
+	}
+
+	if consumeResult.RowCount != 0 {
+		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
+	}
+	return rs, nil
+}
+
+type consumeRowIterResult struct {
+	RowType    []*spannerpb.StructType_Field
+	Rows       []*structpb.ListValue
+	QueryPlan  *spannerpb.QueryPlan
+	QueryStats map[string]interface{}
+	RowCount   int64
+}
+
+func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consumeRowIterResult, error) {
+	var rowType []*spannerpb.StructType_Field
+	var rows []*structpb.ListValue
+	err := rowIter.Do(func(r *spanner.Row) error {
+		var err error
+		if rowType == nil {
+			rowType, err = extractRowType(r)
+			if err != nil {
+				return err
+			}
+		}
+
+		if redactRows {
+			return nil
+		}
+
+		vs, err := rowValues(r)
+		if err != nil {
+			return err
+		}
+
+		rows = append(rows, &structpb.ListValue{Values: vs})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &consumeRowIterResult{
+		RowType:    rowType,
+		Rows:       rows,
+		QueryPlan:  rowIter.QueryPlan,
+		QueryStats: rowIter.QueryStats,
+		RowCount:   rowIter.RowCount,
+	}, nil
 }
 
 func parseExpr(s string) (expr ast.Expr, err error) {
