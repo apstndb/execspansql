@@ -5,25 +5,29 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
 ## Usage: 
 
 ```
-Usage of execspansql:
-  -database string
-        (required) ID of the database.
-  -file string
-        File name contains SQL query; exclusive with --sql
-  -format string
-        Output format; possible values(case-insensitive): json, json-compact, yaml; default=json
-  -instance string
-        (required) ID of the instance.
-  -param value
-        [name]=[Cloud Spanner type or literal]
-  -project string
-        (required) ID of the project.
-  -query-mode string
-        Query mode; possible values(case-insensitive): NORMAL, PLAN, PROFILE; default=PLAN
-  -redact-rows
-        Redact result rows from output
-  -sql string
-        SQL query text; exclusive with --file.
+Usage:
+  execspansql [OPTIONS] [database]
+
+Application Options:
+      --sql=                             SQL query text; exclusive with --sql-file.
+      --sql-file=                        File name contains SQL query; exclusive with --sql
+      --project=                         (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
+      --instance=                        (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
+      --query-mode=[NORMAL|PLAN|PROFILE] Query mode. (default: NORMAL)
+      --format=[json|yaml]               Output format. (default: json)
+      --redact-rows                      Redact result rows from output
+      --jq-filter=                       jq filter
+      --compact-output                   Compact JSON output(--compact-output of jq)
+      --jq-raw-output                    (--raw-output of jq)
+      --jq-from-file=                    (--from-file of jq)
+      --param=                           [name]:[Cloud Spanner type(PLAN only) or literal]
+      --log-grpc                         Show gRPC logs
+
+Help Options:
+  -h, --help                             Show this help message
+
+Arguments:
+  database:                              (required) ID of the database.
 ```
 
 ## Notable features
@@ -62,3 +66,8 @@ $ execspansql --sql='SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastNa
               --param='names=[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]' \
               --query-mode=PROFILE
 ```
+
+## Limitations
+
+* DML and Partitioned DML are not yet supported
+* Supports only json and yaml format
