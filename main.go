@@ -42,6 +42,7 @@ func main() {
 }
 
 var debuglog *log.Logger
+
 func init() {
 	if os.Getenv("DEBUG") != "" {
 		debuglog = log.New(os.Stderr, "", log.LstdFlags)
@@ -54,18 +55,18 @@ type opts struct {
 	Positional struct {
 		Database string `positional-arg-name:"database" description:"(required) ID of the database." required:"true"`
 	} `positional-args:"yes"`
-	Sql           string `long:"sql" description:"SQL query text; exclusive with --file."`
-	SqlFile       string `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
-	Project       string `long:"project" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
-	Instance      string `long:"instance" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
-	QueryMode     string `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
-	Format        string `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
-	RedactRows    bool   `long:"redact-rows" description:"Redact result rows from output"`
-	JqFilter      string `long:"jq-filter" description:"jq filter"`
-	CompactOutput bool   `long:"compact-output" description:"Compact JSON output(--compact-output of jq)"`
-	JqRawOutput   bool   `long:"jq-raw-output" description:"(--raw-output of jq)"`
-	JqFromFile    string `long:"jq-from-file" description:"(--from-file of jq)"`
-	Param map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
+	Sql           string            `long:"sql" description:"SQL query text; exclusive with --file."`
+	SqlFile       string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
+	Project       string            `long:"project" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
+	Instance      string            `long:"instance" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
+	QueryMode     string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
+	Format        string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
+	RedactRows    bool              `long:"redact-rows" description:"Redact result rows from output"`
+	JqFilter      string            `long:"jq-filter" description:"jq filter"`
+	CompactOutput bool              `long:"compact-output" description:"Compact JSON output(--compact-output of jq)"`
+	JqRawOutput   bool              `long:"jq-raw-output" description:"(--raw-output of jq)"`
+	JqFromFile    string            `long:"jq-from-file" description:"(--from-file of jq)"`
+	Param         map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
 }
 
 func processFlags() (o opts, err error) {
