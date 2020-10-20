@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -20,6 +19,7 @@ import (
 	"github.com/MakeNowJust/memefish/pkg/parser"
 	"github.com/MakeNowJust/memefish/pkg/token"
 	"github.com/itchyny/gojq"
+	"github.com/jessevdk/go-flags"
 	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -51,65 +51,67 @@ func init() {
 	}
 }
 
+type opts struct {
+	Positional struct {
+		Database string `positional-arg-name:"database" description:"(required) ID of the database." required:"true"`
+	} `positional-args:"yes"`
+	Sql           string `long:"sql" description:"SQL query text; exclusive with --file."`
+	SqlFile       string `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
+	Project       string `long:"project" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
+	Instance      string `long:"instance" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
+	QueryMode     string `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
+	Format        string `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
+	RedactRows    bool   `long:"redact-rows" description:"Redact result rows from output"`
+	JqFilter      string `long:"jq-filter" description:"jq filter"`
+	CompactOutput bool   `long:"compact-output" description:"Compact JSON output(--compact-output of jq)"`
+	JqRawOutput   bool   `long:"jq-raw-output" description:"(--raw-output of jq)"`
+	JqFromFile    string `long:"jq-from-file" description:"(--from-file of jq)"`
+	Param map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
+}
+
 func _main() error {
 	ctx := context.Background()
-	sql := flag.String("sql", "", "SQL query text; exclusive with --file.")
-	file := flag.String("file", "", "File name contains SQL query; exclusive with --sql")
-	project := flag.String("project", "", "(required) ID of the project.")
-	instance := flag.String("instance", "", "(required) ID of the instance.")
-	database := flag.String("database", "", "(required) ID of the database.")
-	queryMode := flag.String("query-mode", "", "Query mode; possible values(case-insensitive): NORMAL, PLAN, PROFILE; default=PLAN")
-	format := flag.String("format", "", "Output format; possible values(case-insensitive): json, json-compact, yaml; default=json")
-	redactRows := flag.Bool("redact-rows", false, "Redact result rows from output")
-	jqFilter := flag.String("jq-filter", "", "jq filter")
-	compactOutput := flag.Bool("compact-output", false, "Compact JSON output(--compact-output of jq)")
-	jqRawOutput := flag.Bool("jq-raw-output", false, "(--raw-output of jq)")
-	jqFromFile := flag.String("jq-from-file", "", "(--from-file of jq)")
-
-	var params stringList
-	flag.Var(&params, "param", "[name]=[Cloud Spanner type(PLAN only) or literal]")
-
-	flag.Parse()
-
-	if *project == "" || *instance == "" || *database == "" {
-		flag.Usage()
+	var o opts
+	flagParser := flags.NewParser(&o, flags.Default)
+	_, err := flagParser.Parse()
+	if err != nil {
 		os.Exit(1)
 	}
 
 	var query string
 	switch {
-	case *sql != "" && *file != "":
-		flag.Usage()
+	case o.Sql != "" && o.SqlFile != "":
+		flagParser.WriteHelp(os.Stderr)
 		os.Exit(1)
-	case *sql != "":
-		query = *sql
-	case *file != "":
-		if b, err := ioutil.ReadFile(*file); err != nil {
+	case o.Sql != "":
+		query = o.Sql
+	case o.SqlFile != "":
+		if b, err := ioutil.ReadFile(o.SqlFile); err != nil {
 			return err
 		} else {
 			query = string(b)
 		}
 	default:
-		flag.Usage()
+		flagParser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
 
-	if *jqFilter != "" && *jqFromFile != "" {
+	if o.JqFilter != "" && o.JqFromFile != "" {
 		fmt.Fprintln(os.Stderr, "--jq-filter and --jq-from-file are exclusive")
-		flag.Usage()
+		flagParser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
 
 	var jqQuery *gojq.Query
-	if *jqFilter != "" {
+	if o.JqFilter != "" {
 		var err error
-		jqQuery, err = gojq.Parse(*jqFilter)
+		jqQuery, err = gojq.Parse(o.JqFilter)
 		if err != nil {
 			return err
 		}
 	}
-	if *jqFromFile != "" {
-		b, err := ioutil.ReadFile(*jqFromFile)
+	if o.JqFromFile != "" {
+		b, err := ioutil.ReadFile(o.JqFromFile)
 		if err != nil {
 			return err
 		}
@@ -119,31 +121,21 @@ func _main() error {
 		}
 	}
 	var mode spannerpb.ExecuteSqlRequest_QueryMode
-	switch strings.ToUpper(*queryMode) {
+	switch strings.ToUpper(o.QueryMode) {
 	// default is PLAN
-	case "PLAN", "":
+	case "PLAN":
 		mode = spannerpb.ExecuteSqlRequest_PLAN
 	case "PROFILE":
 		mode = spannerpb.ExecuteSqlRequest_PROFILE
 	case "NORMAL":
 		mode = spannerpb.ExecuteSqlRequest_NORMAL
 	default:
-		fmt.Fprintln(os.Stderr, "unknown query-mode:", *queryMode)
-		flag.Usage()
+		fmt.Fprintln(os.Stderr, "unknown query-mode:", o.QueryMode)
+		flagParser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
 
-	switch strings.ToLower(*format) {
-	case "":
-		*format = "json"
-	case "json", "yaml":
-	default:
-		debuglog.Println("unknown format:", *format)
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", *project, *instance, *database)
+	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", o.Project, o.Instance, o.Positional.Database)
 	client, err := spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
 		SessionPoolConfig: spanner.SessionPoolConfig{
 			MaxOpened:           1,
@@ -158,7 +150,7 @@ func _main() error {
 	}
 	defer client.Close()
 
-	paramMap, err := generateParams(params, mode == spannerpb.ExecuteSqlRequest_PLAN)
+	paramMap, err := generateParams(o.Param, mode == spannerpb.ExecuteSqlRequest_PLAN)
 	if err != nil {
 		return err
 	}
@@ -170,7 +162,7 @@ func _main() error {
 	var rows []*structpb.ListValue
 	err = rowIter.Do(func(r *spanner.Row) error {
 		isFirst := rowType == nil
-		if !isFirst && *redactRows {
+		if !isFirst && o.RedactRows {
 			return nil
 		}
 		var row []*structpb.Value
@@ -188,7 +180,7 @@ func _main() error {
 				})
 			}
 		}
-		if !*redactRows {
+		if !o.RedactRows {
 			rows = append(rows, &structpb.ListValue{Values: row})
 		}
 		return nil
@@ -245,7 +237,7 @@ func _main() error {
 
 		yamlenc := yaml.NewEncoder(os.Stdout)
 		jsonenc := json.NewEncoder(os.Stdout)
-		if !*compactOutput {
+		if !o.CompactOutput {
 			jsonenc.SetIndent("", "  ")
 		}
 		for {
@@ -256,14 +248,14 @@ func _main() error {
 			if err, ok := v.(error); ok {
 				return err
 			}
-			switch *format {
+			switch o.Format {
 			case "yaml":
 				err := yamlenc.Encode(v)
 				if err != nil {
 					return err
 				}
 			case "json":
-				if s, ok := v.(string); ok && *jqRawOutput {
+				if s, ok := v.(string); ok && o.JqRawOutput {
 					fmt.Println(s)
 				} else {
 					err := jsonenc.Encode(v)
@@ -275,9 +267,9 @@ func _main() error {
 		}
 	} else {
 		var str string
-		switch *format {
+		switch o.Format {
 		case "json", "":
-			if *compactOutput {
+			if o.CompactOutput {
 				b, err := protojson.Marshal(rs)
 				if err != nil {
 					return err
@@ -328,12 +320,9 @@ func parseType(s string) (typ ast.Type, err error) {
 	return p.ParseType()
 }
 
-func generateParams(ss []string, permitType bool) (map[string]interface{}, error) {
+func generateParams(ss map[string]string, permitType bool) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
-	for _, s := range ss {
-		split := strings.SplitN(s, "=", 2)
-		name := split[0]
-		code := split[1]
+	for name, code := range ss {
 		if typ, err := parseType(code); permitType && err == nil {
 			debuglog.Println(name, "ast.Type.SQL():", typ.SQL())
 			value, err := typeToGenericColumnValue(typ)
