@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"io"
+
+	"github.com/goccy/go-json"
+	"github.com/goccy/go-yaml"
+	"google.golang.org/protobuf/proto"
+
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,7 +15,6 @@ import (
 
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v2"
 
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"go.uber.org/zap"
@@ -85,6 +89,18 @@ func processFlags() (o opts, err error) {
 	return o, nil
 }
 
+// readFileOrDefault returns content of filename or s if filename is empty
+func readFileOrDefault(filename, s string) (string, error) {
+	if filename == "" {
+		return s, nil
+	}
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 func logGrpcClientOptions() []option.ClientOption {
 	zapDevelopmentConfig := zap.NewDevelopmentConfig()
 	zapDevelopmentConfig.DisableCaller = true
@@ -115,62 +131,22 @@ func _main() error {
 	}
 
 	// Use jqQuery even if empty filter
-	var jqQuery *gojq.Query
-	if o.JqFromFile != "" {
-		b, err := ioutil.ReadFile(o.JqFromFile)
-		if err != nil {
-			return err
-		}
-		jq, err := gojq.Parse(string(b))
-		if err != nil {
-			return err
-		}
-		jqQuery = jq
-	} else {
-		jq, err := gojq.Parse(o.JqFilter)
-		if err != nil {
-			return err
-		}
-		jqQuery = jq
+	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
+	if err != nil {
+		return err
 	}
-	var mode spannerpb.ExecuteSqlRequest_QueryMode
-	switch o.QueryMode {
-	case "PLAN":
-		mode = spannerpb.ExecuteSqlRequest_PLAN
-	case "PROFILE":
-		mode = spannerpb.ExecuteSqlRequest_PROFILE
-	case "NORMAL":
-		mode = spannerpb.ExecuteSqlRequest_NORMAL
-	default:
-		return fmt.Errorf("unknown query-mode: %s", o.QueryMode)
+	jqQuery, err := gojq.Parse(jqFilter)
+
+	mode := spannerpb.ExecuteSqlRequest_QueryMode(spannerpb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
+
+	query, err := readFileOrDefault(o.SqlFile, o.Sql)
+	if err != nil {
+		return err
 	}
 
-	var query string
-	switch {
-	case o.Sql != "":
-		query = o.Sql
-	case o.SqlFile != "":
-		if b, err := ioutil.ReadFile(o.SqlFile); err != nil {
-			return err
-		} else {
-			query = string(b)
-		}
-	}
+	logGrpc := o.LogGrpc
 
-	var copts []option.ClientOption
-	if o.LogGrpc {
-		copts = logGrpcClientOptions()
-	}
-
-	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", o.Project, o.Instance, o.Positional.Database)
-	client, err := spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
-		SessionPoolConfig: spanner.SessionPoolConfig{
-			MaxOpened:           1,
-			MinOpened:           1,
-			WriteSessions:       0,
-			TrackSessionHandles: true,
-		},
-	}, copts...)
+	client, err := newClient(ctx, o.Project, o.Instance, o.Positional.Database, logGrpc)
 	if err != nil {
 		return err
 	}
@@ -186,52 +162,98 @@ func _main() error {
 		return err
 	}
 
-	if jqQuery != nil {
-		// input := map[string]interface{}{"foo": []interface{}{1, 2, 3}}
-		var object map[string]interface{}
-		b, err := protojson.Marshal(rs)
-		if err != nil {
+	object, err := toProtojsonObject(rs)
+	if err != nil {
+		return err
+	}
+
+	enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
+	if err != nil {
+		return err
+	}
+	return printResult(enc, jqQuery.Run(object))
+}
+
+func newClient(ctx context.Context, project, instance, database string, logGrpc bool) (*spanner.Client, error) {
+	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
+
+	var copts []option.ClientOption
+	if logGrpc {
+		copts = logGrpcClientOptions()
+	}
+
+	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
+		SessionPoolConfig: spanner.SessionPoolConfig{
+			MaxOpened:           1,
+			MinOpened:           1,
+			WriteSessions:       0,
+			TrackSessionHandles: true,
+		},
+	}, copts...)
+}
+
+func toProtojsonObject(m proto.Message) (map[string]interface{}, error) {
+	var object map[string]interface{}
+	b, err := protojson.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return nil, err
+	}
+	return object, nil
+}
+
+type encoder interface{ Encode(v interface{}) error }
+
+type stringPassThroughEncoderWrapper struct {
+	Writer io.Writer
+	Enc    encoder
+}
+
+func (enc *stringPassThroughEncoderWrapper) Encode(v interface{}) error {
+	if s, ok := v.(string); ok {
+		_, err := fmt.Fprintln(enc.Writer, s)
+		return err
+	}
+	return enc.Enc.Encode(v)
+}
+
+func printResult(enc encoder, iter gojq.Iter) error {
+	for {
+		v, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err, ok := v.(error); ok {
 			return err
 		}
-		err = json.Unmarshal(b, &object)
+		err := enc.Encode(v)
 		if err != nil {
 			return err
-		}
-
-		iter := jqQuery.Run(object) // or query.RunWithContext
-
-		yamlenc := yaml.NewEncoder(os.Stdout)
-		jsonenc := json.NewEncoder(os.Stdout)
-		if !o.CompactOutput {
-			jsonenc.SetIndent("", "  ")
-		}
-		for {
-			v, ok := iter.Next()
-			if !ok {
-				break
-			}
-			if err, ok := v.(error); ok {
-				return err
-			}
-			switch o.Format {
-			case "yaml":
-				err := yamlenc.Encode(v)
-				if err != nil {
-					return err
-				}
-			case "json":
-				if s, ok := v.(string); ok && o.JqRawOutput {
-					fmt.Println(s)
-				} else {
-					err := jsonenc.Encode(v)
-					if err != nil {
-						return err
-					}
-				}
-			}
 		}
 	}
 	return nil
+}
+
+func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {
+	switch {
+	case format == "yaml":
+		return yaml.NewEncoder(writer), nil
+	case format == "json":
+		jsonenc := json.NewEncoder(writer)
+		if !compactOutput {
+			jsonenc.SetIndent("", "  ")
+		}
+		if rawOutput {
+			return &stringPassThroughEncoderWrapper{Writer: writer, Enc: jsonenc}, nil
+		} else {
+			return jsonenc, nil
+		}
+	default:
+		return nil, fmt.Errorf("unknown format: %s", format)
+	}
 }
 
 func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*spannerpb.ResultSet, error) {
