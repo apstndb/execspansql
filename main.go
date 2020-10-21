@@ -4,14 +4,14 @@ import (
 	"context"
 	"io"
 
-	"github.com/goccy/go-json"
-	"github.com/goccy/go-yaml"
-	"google.golang.org/protobuf/proto"
-
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+
+	"github.com/goccy/go-json"
+	"github.com/goccy/go-yaml"
+	"google.golang.org/protobuf/proto"
 
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -49,15 +49,15 @@ type opts struct {
 	} `positional-args:"yes"`
 	Sql           string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
 	SqlFile       string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
-	Project       string            `long:"project" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
-	Instance      string            `long:"instance" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
+	Project       string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
+	Instance      string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
 	QueryMode     string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
 	Format        string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
 	RedactRows    bool              `long:"redact-rows" description:"Redact result rows from output"`
-	JqFilter      string            `long:"jq-filter" description:"jq filter"`
-	CompactOutput bool              `long:"compact-output" description:"Compact JSON output(--compact-output of jq)"`
-	JqRawOutput   bool              `long:"jq-raw-output" description:"(--raw-output of jq)"`
-	JqFromFile    string            `long:"jq-from-file" description:"(--from-file of jq)"`
+	CompactOutput bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
+	JqFilter      string            `long:"filter" description:"jq filter"`
+	JqRawOutput   bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
+	JqFromFile    string            `long:"filter-file" description:"(--from-file of jq)"`
 	Param         map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
 	LogGrpc       bool              `long:"log-grpc" description:"Show gRPC logs"`
 }
