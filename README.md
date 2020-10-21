@@ -185,3 +185,5 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
 
 * DML and Partitioned DML are not yet supported
 * Supports only json and yaml format
+* `metadata.rowType` is not populated when empty result
+  * until [google-cloud-go#1805](https://github.com/googleapis/google-cloud-go/issues/1805) is fixed in upstream
