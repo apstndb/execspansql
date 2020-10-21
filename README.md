@@ -93,7 +93,7 @@ execspansql can process output using embedded [gojq](https://github.com/itchyny/
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=json \
               --sql='SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}' \
-              --jq-filter='.stats.queryPlan' \
+              --filter='.stats.queryPlan' \
   | rendertree --mode=PROFILE 
 +-----+----------------------------------------------------------------------------+------+-------+------------+
 | ID  | Operator                                                                   | Rows | Exec. | Latency    |
@@ -123,7 +123,7 @@ Predicates(identified by ID):
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=json \
   --sql='SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}' \
-  --jq-from-file=examples/plan.jq --jq-raw-output
+  --filter-file=examples/plan.jq --raw-output
  *0 Distributed Union
  *1   Distributed Cross Apply
   2     Create Batch
