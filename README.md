@@ -20,15 +20,15 @@ Usage:
 Application Options:
       --sql=                             SQL query text; exclusive with --sql-file.
       --sql-file=                        File name contains SQL query; exclusive with --sql
-      --project=                         (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
-      --instance=                        (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
+  -p, --project=                         (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
+  -i, --instance=                        (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
       --query-mode=[NORMAL|PLAN|PROFILE] Query mode. (default: NORMAL)
       --format=[json|yaml]               Output format. (default: json)
       --redact-rows                      Redact result rows from output
-      --jq-filter=                       jq filter
-      --compact-output                   Compact JSON output(--compact-output of jq)
-      --jq-raw-output                    (--raw-output of jq)
-      --jq-from-file=                    (--from-file of jq)
+  -c, --compact-output                   Compact JSON output(--compact-output of jq)
+      --filter=                          jq filter
+  -r, --raw-output                       (--raw-output of jq)
+      --filter-file=                     (--from-file of jq)
       --param=                           [name]:[Cloud Spanner type(PLAN only) or literal]
       --log-grpc                         Show gRPC logs
 
