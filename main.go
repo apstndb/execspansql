@@ -171,6 +171,7 @@ func _main() error {
 	if err != nil {
 		return err
 	}
+
 	return printResult(enc, jqQuery.Run(object))
 }
 
@@ -357,7 +358,7 @@ func generateParams(ss map[string]string, permitType bool) (map[string]interface
 			debuglog.Println(name, "ast.Type.SQL():", typ.SQL())
 			value, err := astTypeToGenericColumnValue(typ)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("error on processing param `%s`: %w", name, err)
 			}
 
 			debuglog.Println(name, "spannerpb.Type:", value.Type)
@@ -367,14 +368,14 @@ func generateParams(ss map[string]string, permitType bool) (map[string]interface
 			debuglog.Println(name, "ast.Expr.SQL():", expr.SQL())
 			value, err := astExprToGenericColumnValue(expr)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("error on processing param `%s`: %w", name, err)
 			}
 
 			debuglog.Println(name, "spannerpb.Type:", value.Type)
 			result[name] = value
 			continue
 		} else {
-			return nil, err
+			return nil, fmt.Errorf("error on parsing param `%s`: %w", name, err)
 		}
 	}
 	return result, nil
