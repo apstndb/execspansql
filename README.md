@@ -142,6 +142,45 @@ Predicates:
  20: Seek Condition: ($SingerId' = $batched_SingerId)
 ```
 
+#### Examples from document
+
+[Querying data with a STRUCT object](https://cloud.google.com/spanner/docs/structs?hl=en#querying_data_with_a_struct_object)
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=NORMAL \
+    --sql='SELECT SingerId FROM SINGERS
+           WHERE (FirstName, LastName) = @singerinfo' \
+    --param='singerinfo:STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell")'
+```
+
+[Querying data with a STRUCT object](https://cloud.google.com/spanner/docs/structs?hl=en#querying_data_with_an_array_of_struct_objects))
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=NORMAL \
+    --sql='SELECT SingerId FROM SINGERS
+           WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName)
+           IN UNNEST(@names)' \
+    --param='names:[STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell"), ("Hannah", "Harris")]'
+```
+
+
+[Accessing STRUCT field values](https://cloud.google.com/spanner/docs/structs?hl=en#accessing_struct_field_values)
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=NORMAL \
+    --sql='SELECT SingerId
+           FROM Singers
+           WHERE FirstName = @name.FirstName' \
+    --param='name:STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell")'
+```
+```
+$ execspansql ${DATABASE_ID} --query-mode=NORMAL \
+    --sql='SELECT SingerId, @songinfo.SongName
+           FROM Singers
+           WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@songinfo.ArtistNames)' \
+     --param='songinfo:STRUCT<SongName STRING, ArtistNames ARRAY<STRUCT<FirstName STRING, LastName STRING>>>("Imagination", [("Elena", "Campbell"), ("Hannah", "Harris")])'
+```
+
 ## Limitations
 
 * DML and Partitioned DML are not yet supported
