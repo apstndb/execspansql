@@ -284,7 +284,6 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 			return nil, err
 		}
 		queryStats = qs
-
 	}
 
 	if consumeResult.QueryPlan != nil || queryStats != nil {
@@ -311,7 +310,6 @@ type consumeRowIterResult struct {
 func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consumeRowIterResult, error) {
 	var rows []*structpb.ListValue
 	err := rowIter.Do(func(r *spanner.Row) error {
-		var err error
 		if redactRows {
 			return nil
 		}
