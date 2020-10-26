@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/goccy/go-json"
-	"github.com/goccy/go-yaml"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
