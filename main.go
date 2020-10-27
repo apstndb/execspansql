@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -9,7 +10,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/goccy/go-json"
+	"encoding/json"
+
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -194,12 +196,16 @@ func newClient(ctx context.Context, project, instance, database string, logGrpc 
 }
 
 func toProtojsonObject(m proto.Message) (map[string]interface{}, error) {
-	var object map[string]interface{}
 	b, err := protojson.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(b, &object)
+
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+
+	var object map[string]interface{}
+	err = dec.Decode(&object)
 	if err != nil {
 		return nil, err
 	}
