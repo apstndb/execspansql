@@ -3,9 +3,8 @@ module github.com/apstndb/execspansql
 go 1.15
 
 require (
-	cloud.google.com/go/spanner v1.10.0
+	cloud.google.com/go/spanner v1.11.0
 	github.com/MakeNowJust/memefish v0.0.0-20201019133624-0b597d4af7d9
-	github.com/goccy/go-json v0.1.13
 	github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 	github.com/itchyny/gojq v0.11.2
 	github.com/jessevdk/go-flags v1.4.0
