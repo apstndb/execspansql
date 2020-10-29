@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"regexp"
+	"time"
 
 	"fmt"
 	"io/ioutil"
@@ -66,6 +67,7 @@ type opts struct {
 	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
 	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
 	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
+	Timeout              time.Duration     `long:"timeout" default:"10m" description:"Maximum time to wait for the SQL query to complete"`
 }
 
 func processFlags() (o opts, err error) {
@@ -163,12 +165,13 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 }
 
 func _main() error {
-	ctx := context.Background()
-
 	o, err := processFlags()
 	if err != nil {
 		os.Exit(1)
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
+	defer cancel()
 
 	// Use jqQuery even if empty filter
 	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
