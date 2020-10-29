@@ -128,10 +128,6 @@ func logGrpcClientOptions() []option.ClientOption {
 	}
 }
 
-type queryableTx interface {
-	QueryWithOptions(ctx context.Context, statement spanner.Statement, opts spanner.QueryOptions) *spanner.RowIterator
-}
-
 type queryMode int
 
 const (
@@ -140,15 +136,27 @@ const (
 	partitionedDML
 )
 
-func runInNewTransaction(ctx context.Context, client *spanner.Client, mode queryMode, f func(context.Context, queryableTx) error) error {
+func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*spannerpb.ResultSet, error) {
+	var rs *spannerpb.ResultSet
 	switch mode {
 	case readWrite:
-		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, rwTx *spanner.ReadWriteTransaction) error {
-			return f(ctx, rwTx)
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
+			rs, err = consumeRowIter(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
+			return err
 		})
-		return err
+		return rs, err
 	case single:
-		return f(ctx, client.Single())
+		return consumeRowIter(client.Single().QueryWithOptions(ctx, stmt, opts), reductRows)
+	case partitionedDML:
+		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
+		return &spannerpb.ResultSet{
+			Metadata: &spannerpb.ResultSetMetadata{
+				RowType: &spannerpb.StructType{},
+			},
+			Stats: &spannerpb.ResultSetStats{
+				RowCount: &spannerpb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			},
+		}, err
 	default:
 		panic(fmt.Sprintf("unknown mode: %d", mode))
 	}
@@ -188,9 +196,6 @@ func _main() error {
 	if err != nil {
 		return err
 	}
-	var rs *spannerpb.ResultSet
-	stmt := spanner.Statement{SQL: query, Params: paramMap}
-	opts := spanner.QueryOptions{Mode: &mode}
 	var m queryMode
 	switch {
 	case o.EnablePartitionedDML:
@@ -200,25 +205,10 @@ func _main() error {
 	default:
 		m = single
 	}
-	if m == partitionedDML {
-		var count int64
-		count, err = client.PartitionedUpdateWithOptions(ctx, stmt, opts)
-		rs = &spannerpb.ResultSet{
-			Metadata: &spannerpb.ResultSetMetadata{
-				RowType: &spannerpb.StructType{},
-			},
-			Stats: &spannerpb.ResultSetStats{
-				RowCount: &spannerpb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
-			},
-		}
-	} else {
-		queryUsingTx := func(ctx context.Context, tx queryableTx) (err error) {
-			rs, err = consumeRowIter(tx.QueryWithOptions(ctx, stmt, opts), o.RedactRows)
-			return
-		}
-		if err := runInNewTransaction(ctx, client, m, queryUsingTx); err != nil {
-			return err
-		}
+
+	rs, err := runInNewTransaction(ctx, client, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+	if err != nil {
+		return err
 	}
 
 	object, err := toProtojsonObject(rs)
@@ -358,16 +348,16 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 
 	}
 
-	if consumeResult.QueryPlan != nil || queryStats != nil {
+	if consumeResult.QueryPlan != nil || queryStats != nil || consumeResult.RowCount != 0 {
 		rs.Stats = &spannerpb.ResultSetStats{
 			QueryPlan:  consumeResult.QueryPlan,
 			QueryStats: queryStats,
 		}
+		if consumeResult.RowCount != 0 {
+			rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
+		}
 	}
 
-	if consumeResult.RowCount != 0 {
-		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
-	}
 	return rs, nil
 }
 
