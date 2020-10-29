@@ -250,6 +250,7 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 		return yaml.NewEncoder(writer), nil
 	case format == "json":
 		jsonenc := json.NewEncoder(writer)
+		jsonenc.SetEscapeHTML(false)
 		if !compactOutput {
 			jsonenc.SetIndent("", "  ")
 		}
