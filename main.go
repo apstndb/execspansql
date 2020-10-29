@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"regexp"
 
 	"fmt"
 	"io/ioutil"
@@ -34,6 +35,8 @@ func main() {
 		log.Fatalln(err)
 	}
 }
+
+var dmlRe = regexp.MustCompile(`(?is)^\s*(INSERT|UPDATE|DELETE)\s+.+$`)
 
 var debuglog *log.Logger
 
@@ -124,6 +127,21 @@ func logGrpcClientOptions() []option.ClientOption {
 	}
 }
 
+type queryableTx interface {
+	QueryWithOptions(ctx context.Context, statement spanner.Statement, opts spanner.QueryOptions) *spanner.RowIterator
+}
+
+func runInNewTransaction(ctx context.Context, client *spanner.Client, isDML bool, f func(context.Context, queryableTx) error) error {
+	if isDML {
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, rwTx *spanner.ReadWriteTransaction) error {
+			return f(ctx, rwTx)
+		})
+		return err
+	} else {
+		return f(ctx, client.Single())
+	}
+}
+
 func _main() error {
 	ctx := context.Background()
 
@@ -158,9 +176,12 @@ func _main() error {
 	if err != nil {
 		return err
 	}
-
-	rs, err := consumeRowIter(client.Single().QueryWithOptions(ctx, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}), o.RedactRows)
-	if err != nil {
+	var rs *spannerpb.ResultSet
+	queryUsingTx := func(ctx context.Context, tx queryableTx) (err error) {
+		rs, err = consumeRowIter(tx.QueryWithOptions(ctx, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}), o.RedactRows)
+		return
+	}
+	if err := runInNewTransaction(ctx, client, dmlRe.MatchString(query), queryUsingTx); err != nil {
 		return err
 	}
 
