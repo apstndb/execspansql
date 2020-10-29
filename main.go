@@ -52,19 +52,20 @@ type opts struct {
 	Positional struct {
 		Database string `positional-arg-name:"database" description:"(required) ID of the database." required:"true"`
 	} `positional-args:"yes"`
-	Sql           string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
-	SqlFile       string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
-	Project       string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
-	Instance      string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
-	QueryMode     string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
-	Format        string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
-	RedactRows    bool              `long:"redact-rows" description:"Redact result rows from output"`
-	CompactOutput bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
-	JqFilter      string            `long:"filter" description:"jq filter"`
-	JqRawOutput   bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
-	JqFromFile    string            `long:"filter-file" description:"(--from-file of jq)"`
-	Param         map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
-	LogGrpc       bool              `long:"log-grpc" description:"Show gRPC logs"`
+	Sql                  string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
+	SqlFile              string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
+	Project              string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
+	Instance             string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
+	QueryMode            string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
+	Format               string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
+	RedactRows           bool              `long:"redact-rows" description:"Redact result rows from output"`
+	CompactOutput        bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
+	JqFilter             string            `long:"filter" description:"jq filter"`
+	JqRawOutput          bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
+	JqFromFile           string            `long:"filter-file" description:"(--from-file of jq)"`
+	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
+	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
+	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
 }
 
 func processFlags() (o opts, err error) {
@@ -127,18 +128,37 @@ func logGrpcClientOptions() []option.ClientOption {
 	}
 }
 
-type queryableTx interface {
-	QueryWithOptions(ctx context.Context, statement spanner.Statement, opts spanner.QueryOptions) *spanner.RowIterator
-}
+type queryMode int
 
-func runInNewTransaction(ctx context.Context, client *spanner.Client, isDML bool, f func(context.Context, queryableTx) error) error {
-	if isDML {
-		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, rwTx *spanner.ReadWriteTransaction) error {
-			return f(ctx, rwTx)
+const (
+	single queryMode = iota
+	readWrite
+	partitionedDML
+)
+
+func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*spannerpb.ResultSet, error) {
+	var rs *spannerpb.ResultSet
+	switch mode {
+	case readWrite:
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
+			rs, err = consumeRowIter(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
+			return err
 		})
-		return err
-	} else {
-		return f(ctx, client.Single())
+		return rs, err
+	case single:
+		return consumeRowIter(client.Single().QueryWithOptions(ctx, stmt, opts), reductRows)
+	case partitionedDML:
+		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
+		return &spannerpb.ResultSet{
+			Metadata: &spannerpb.ResultSetMetadata{
+				RowType: &spannerpb.StructType{},
+			},
+			Stats: &spannerpb.ResultSetStats{
+				RowCount: &spannerpb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			},
+		}, err
+	default:
+		panic(fmt.Sprintf("unknown mode: %d", mode))
 	}
 }
 
@@ -176,12 +196,18 @@ func _main() error {
 	if err != nil {
 		return err
 	}
-	var rs *spannerpb.ResultSet
-	queryUsingTx := func(ctx context.Context, tx queryableTx) (err error) {
-		rs, err = consumeRowIter(tx.QueryWithOptions(ctx, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}), o.RedactRows)
-		return
+	var m queryMode
+	switch {
+	case o.EnablePartitionedDML:
+		m = partitionedDML
+	case dmlRe.MatchString(query):
+		m = readWrite
+	default:
+		m = single
 	}
-	if err := runInNewTransaction(ctx, client, dmlRe.MatchString(query), queryUsingTx); err != nil {
+
+	rs, err := runInNewTransaction(ctx, client, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+	if err != nil {
 		return err
 	}
 
@@ -322,16 +348,16 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 
 	}
 
-	if consumeResult.QueryPlan != nil || queryStats != nil {
+	if consumeResult.QueryPlan != nil || queryStats != nil || consumeResult.RowCount != 0 {
 		rs.Stats = &spannerpb.ResultSetStats{
 			QueryPlan:  consumeResult.QueryPlan,
 			QueryStats: queryStats,
 		}
+		if consumeResult.RowCount != 0 {
+			rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
+		}
 	}
 
-	if consumeResult.RowCount != 0 {
-		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
-	}
 	return rs, nil
 }
 
