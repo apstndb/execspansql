@@ -2,6 +2,8 @@
 
 Yet another `gcloud spanner databases execute-sql` replacement for better composability.
 
+* (Almost) Compatible interface with `gcloud spanner databases execute-sql`
+  * (Doesn't support `gcloud config`)
 * Support query parameters
 * Embedded jq
 * Emit gRPC message logs
@@ -31,12 +33,15 @@ Application Options:
       --filter-file=                     (--from-file of jq)
       --param=                           [name]:[Cloud Spanner type(PLAN only) or literal]
       --log-grpc                         Show gRPC logs
+      --enable-partitioned-dml           Execute DML statement using Partitioned DML
+      --timeout=                         Maximum time to wait for the SQL query to complete (default: 10m)
 
 Help Options:
   -h, --help                             Show this help message
 
 Arguments:
   database:                              (required) ID of the database.
+
 ```
 
 ## Notable features
@@ -183,7 +188,6 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
 
 ## Limitations
 
-* DML and Partitioned DML are not yet supported
 * Supports only json and yaml format
 * `metadata.rowType` is not populated when empty result
   * until [google-cloud-go#1805](https://github.com/googleapis/google-cloud-go/issues/1805) is fixed in upstream
