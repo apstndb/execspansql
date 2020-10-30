@@ -2,6 +2,8 @@
 
 Yet another `gcloud spanner databases execute-sql` replacement for better composability.
 
+## Features
+
 * (Almost) Compatible interface with `gcloud spanner databases execute-sql`
   * (Doesn't support `gcloud config`)
 * Support query parameters
