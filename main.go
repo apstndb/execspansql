@@ -329,16 +329,9 @@ func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*spannerpb.R
 
 func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultSet, error) {
 	// Leave null if fields are not populated
-	var metadata *spannerpb.ResultSetMetadata
-	if consumeResult.RowType != nil {
-		metadata = &spannerpb.ResultSetMetadata{
-			RowType: &spannerpb.StructType{Fields: consumeResult.RowType},
-		}
-	}
-
 	rs := &spannerpb.ResultSet{
 		Rows:     consumeResult.Rows,
-		Metadata: metadata,
+		Metadata: consumeResult.Metadata,
 	}
 
 	var queryStats *structpb.Struct
@@ -348,7 +341,6 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 			return nil, err
 		}
 		queryStats = qs
-
 	}
 
 	if consumeResult.QueryPlan != nil || queryStats != nil || consumeResult.RowCount != 0 {
@@ -365,25 +357,16 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 }
 
 type consumeRowIterResult struct {
-	RowType    []*spannerpb.StructType_Field
-	Rows       []*structpb.ListValue
+	Metadata   *spannerpb.ResultSetMetadata
 	QueryPlan  *spannerpb.QueryPlan
 	QueryStats map[string]interface{}
 	RowCount   int64
+	Rows       []*structpb.ListValue
 }
 
 func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consumeRowIterResult, error) {
-	var rowType []*spannerpb.StructType_Field
 	var rows []*structpb.ListValue
 	err := rowIter.Do(func(r *spanner.Row) error {
-		var err error
-		if rowType == nil {
-			rowType, err = extractRowType(r)
-			if err != nil {
-				return err
-			}
-		}
-
 		if redactRows {
 			return nil
 		}
@@ -400,11 +383,11 @@ func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consume
 		return nil, err
 	}
 	return &consumeRowIterResult{
-		RowType:    rowType,
 		Rows:       rows,
 		QueryPlan:  rowIter.QueryPlan,
 		QueryStats: rowIter.QueryStats,
 		RowCount:   rowIter.RowCount,
+		Metadata:   rowIter.Metadata,
 	}, nil
 }
 
