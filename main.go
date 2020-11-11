@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"regexp"
+	"time"
 
 	"fmt"
 	"io/ioutil"
@@ -35,6 +37,8 @@ func main() {
 	}
 }
 
+var dmlRe = regexp.MustCompile(`(?is)^\s*(INSERT|UPDATE|DELETE)\s+.+$`)
+
 var debuglog *log.Logger
 
 func init() {
@@ -49,19 +53,21 @@ type opts struct {
 	Positional struct {
 		Database string `positional-arg-name:"database" description:"(required) ID of the database." required:"true"`
 	} `positional-args:"yes"`
-	Sql           string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
-	SqlFile       string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
-	Project       string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
-	Instance      string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
-	QueryMode     string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
-	Format        string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
-	RedactRows    bool              `long:"redact-rows" description:"Redact result rows from output"`
-	CompactOutput bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
-	JqFilter      string            `long:"filter" description:"jq filter"`
-	JqRawOutput   bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
-	JqFromFile    string            `long:"filter-file" description:"(--from-file of jq)"`
-	Param         map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
-	LogGrpc       bool              `long:"log-grpc" description:"Show gRPC logs"`
+	Sql                  string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
+	SqlFile              string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
+	Project              string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
+	Instance             string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
+	QueryMode            string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
+	Format               string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
+	RedactRows           bool              `long:"redact-rows" description:"Redact result rows from output"`
+	CompactOutput        bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
+	JqFilter             string            `long:"filter" description:"jq filter"`
+	JqRawOutput          bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
+	JqFromFile           string            `long:"filter-file" description:"(--from-file of jq)"`
+	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
+	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
+	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
+	Timeout              time.Duration     `long:"timeout" default:"10m" description:"Maximum time to wait for the SQL query to complete"`
 }
 
 func processFlags() (o opts, err error) {
@@ -124,13 +130,48 @@ func logGrpcClientOptions() []option.ClientOption {
 	}
 }
 
-func _main() error {
-	ctx := context.Background()
+type queryMode int
 
+const (
+	single queryMode = iota
+	readWrite
+	partitionedDML
+)
+
+func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*spannerpb.ResultSet, error) {
+	var rs *spannerpb.ResultSet
+	switch mode {
+	case readWrite:
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
+			rs, err = consumeRowIter(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
+			return err
+		})
+		return rs, err
+	case single:
+		return consumeRowIter(client.Single().QueryWithOptions(ctx, stmt, opts), reductRows)
+	case partitionedDML:
+		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
+		return &spannerpb.ResultSet{
+			Metadata: &spannerpb.ResultSetMetadata{
+				RowType: &spannerpb.StructType{},
+			},
+			Stats: &spannerpb.ResultSetStats{
+				RowCount: &spannerpb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			},
+		}, err
+	default:
+		panic(fmt.Sprintf("unknown mode: %d", mode))
+	}
+}
+
+func _main() error {
 	o, err := processFlags()
 	if err != nil {
 		os.Exit(1)
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
+	defer cancel()
 
 	// Use jqQuery even if empty filter
 	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
@@ -158,8 +199,17 @@ func _main() error {
 	if err != nil {
 		return err
 	}
+	var m queryMode
+	switch {
+	case o.EnablePartitionedDML:
+		m = partitionedDML
+	case dmlRe.MatchString(query):
+		m = readWrite
+	default:
+		m = single
+	}
 
-	rs, err := consumeRowIter(client.Single().QueryWithOptions(ctx, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}), o.RedactRows)
+	rs, err := runInNewTransaction(ctx, client, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
 	if err != nil {
 		return err
 	}
@@ -250,6 +300,7 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 		return yaml.NewEncoder(writer), nil
 	case format == "json":
 		jsonenc := json.NewEncoder(writer)
+		jsonenc.SetEscapeHTML(false)
 		if !compactOutput {
 			jsonenc.SetIndent("", "  ")
 		}
@@ -292,16 +343,16 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 		queryStats = qs
 	}
 
-	if consumeResult.QueryPlan != nil || queryStats != nil {
+	if consumeResult.QueryPlan != nil || queryStats != nil || consumeResult.RowCount != 0 {
 		rs.Stats = &spannerpb.ResultSetStats{
 			QueryPlan:  consumeResult.QueryPlan,
 			QueryStats: queryStats,
 		}
+		if consumeResult.RowCount != 0 {
+			rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
+		}
 	}
 
-	if consumeResult.RowCount != 0 {
-		rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
-	}
 	return rs, nil
 }
 
