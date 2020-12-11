@@ -25,28 +25,31 @@ Usage:
   execspansql [OPTIONS] [database]
 
 Application Options:
-      --sql=                             SQL query text; exclusive with --sql-file.
-      --sql-file=                        File name contains SQL query; exclusive with --sql
-  -p, --project=                         (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
-  -i, --instance=                        (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
-      --query-mode=[NORMAL|PLAN|PROFILE] Query mode. (default: NORMAL)
-      --format=[json|yaml]               Output format. (default: json)
-      --redact-rows                      Redact result rows from output
-  -c, --compact-output                   Compact JSON output(--compact-output of jq)
-      --filter=                          jq filter
-  -r, --raw-output                       (--raw-output of jq)
-      --filter-file=                     (--from-file of jq)
-      --param=                           [name]:[Cloud Spanner type(PLAN only) or literal]
-      --log-grpc                         Show gRPC logs
-      --enable-partitioned-dml           Execute DML statement using Partitioned DML
-      --timeout=                         Maximum time to wait for the SQL query to complete (default: 10m)
+      --sql=                                SQL query text; exclusive with --sql-file.
+      --sql-file=                           File name contains SQL query; exclusive with --sql
+  -p, --project=                            (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
+  -i, --instance=                           (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
+      --query-mode=[NORMAL|PLAN|PROFILE]    Query mode. (default: NORMAL)
+      --format=[json|yaml]                  Output format. (default: json)
+      --redact-rows                         Redact result rows from output
+  -c, --compact-output                      Compact JSON output(--compact-output of jq)
+      --filter=                             jq filter
+  -r, --raw-output                          (--raw-output of jq)
+      --filter-file=                        (--from-file of jq)
+      --param=                              [name]:[Cloud Spanner type(PLAN only) or literal]
+      --log-grpc                            Show gRPC logs
+      --enable-partitioned-dml              Execute DML statement using Partitioned DML
+      --timeout=                            Maximum time to wait for the SQL query to complete (default: 10m)
+
+Timestamp Bound:
+      --strong                              Perform a strong query.
+      --read-timestamp=TIMESTAMP            Perform a query at the given timestamp. (micro-seconds precision)
 
 Help Options:
-  -h, --help                             Show this help message
+  -h, --help                                Show this help message
 
 Arguments:
-  database:                              (required) ID of the database.
-
+  database:                                 (required) ID of the database.
 ```
 
 ## Notable features

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"regexp"
 	"time"
@@ -68,6 +69,10 @@ type opts struct {
 	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
 	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration     `long:"timeout" default:"10m" description:"Maximum time to wait for the SQL query to complete"`
+	TimestampBound       struct {
+		Strong        bool   `long:"strong" description:"Perform a strong query."`
+		ReadTimestamp string `long:"read-timestamp" description:"Perform a query at the given timestamp. (micro-seconds precision)" value-name:"TIMESTAMP"`
+	} `group:"Timestamp Bound"`
 }
 
 func processFlags() (o opts, err error) {
@@ -79,6 +84,7 @@ func processFlags() (o opts, err error) {
 		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
 			return
 		}
+		log.Print(err)
 		flagParser.WriteHelp(os.Stderr)
 	}()
 	_, err = flagParser.Parse()
@@ -86,13 +92,24 @@ func processFlags() (o opts, err error) {
 		return o, err
 	}
 
-	if (o.Sql != "" && o.SqlFile != "") || (o.Sql == "" && o.SqlFile == "") {
-		return o, err
+	if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); o.TimestampBound.ReadTimestamp != "" && err != nil {
+		return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
+	}
+
+	if o.TimestampBound.Strong && o.TimestampBound.ReadTimestamp != "" {
+		return o, errors.New("--strong and --read-timestamp are exclusive")
+	}
+
+	if o.Sql != "" && o.SqlFile != "" {
+		return o, errors.New("--sql and --sql-file are exclusive")
+	}
+
+	if o.Sql == "" && o.SqlFile == "" {
+		return o, errors.New("--sql or --sql-file is required")
 	}
 
 	if o.JqFilter != "" && o.JqFromFile != "" {
-		fmt.Fprintln(os.Stderr, "--jq-filter and --jq-from-file are exclusive")
-		return o, err
+		return o, errors.New("--jq-filter and --jq-from-file are exclusive")
 	}
 	return o, nil
 }
@@ -130,17 +147,19 @@ func logGrpcClientOptions() []option.ClientOption {
 	}
 }
 
-type queryMode int
+type queryMode interface{ isQueryMode() }
 
-const (
-	single queryMode = iota
-	readWrite
-	partitionedDML
-)
+type single struct{ spanner.TimestampBound }
+type readWrite struct{}
+type partitionedDML struct{}
+
+func (s single) isQueryMode()         {}
+func (r readWrite) isQueryMode()      {}
+func (p partitionedDML) isQueryMode() {}
 
 func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*spannerpb.ResultSet, error) {
 	var rs *spannerpb.ResultSet
-	switch mode {
+	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
 			rs, err = consumeRowIter(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
@@ -148,7 +167,7 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 		})
 		return rs, err
 	case single:
-		return consumeRowIter(client.Single().QueryWithOptions(ctx, stmt, opts), reductRows)
+		return consumeRowIter(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		return &spannerpb.ResultSet{
@@ -202,11 +221,17 @@ func _main() error {
 	var m queryMode
 	switch {
 	case o.EnablePartitionedDML:
-		m = partitionedDML
+		m = partitionedDML{}
 	case dmlRe.MatchString(query):
-		m = readWrite
+		m = readWrite{}
+	case o.TimestampBound.ReadTimestamp != "":
+		ts, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp)
+		if err != nil {
+			return err
+		}
+		m = single{spanner.ReadTimestamp(ts)}
 	default:
-		m = single
+		m = single{spanner.StrongRead()}
 	}
 
 	rs, err := runInNewTransaction(ctx, client, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
