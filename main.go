@@ -84,6 +84,7 @@ func processFlags() (o opts, err error) {
 		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
 			return
 		}
+		log.Print(err)
 		flagParser.WriteHelp(os.Stderr)
 	}()
 	_, err = flagParser.Parse()
@@ -91,13 +92,24 @@ func processFlags() (o opts, err error) {
 		return o, err
 	}
 
-	if (o.Sql != "" && o.SqlFile != "") || (o.Sql == "" && o.SqlFile == "") {
-		return o, err
+	if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); o.TimestampBound.ReadTimestamp != "" && err != nil {
+		return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
+	}
+
+	if o.TimestampBound.Strong && o.TimestampBound.ReadTimestamp != "" {
+		return o, errors.New("--strong and --read-timestamp are exclusive")
+	}
+
+	if o.Sql != "" && o.SqlFile != "" {
+		return o, errors.New("--sql and --sql-file are exclusive")
+	}
+
+	if o.Sql == "" && o.SqlFile == "" {
+		return o, errors.New("--sql or --sql-file is required")
 	}
 
 	if o.JqFilter != "" && o.JqFromFile != "" {
-		fmt.Fprintln(os.Stderr, "--jq-filter and --jq-from-file are exclusive")
-		return o, err
+		return o, errors.New("--jq-filter and --jq-from-file are exclusive")
 	}
 	return o, nil
 }
