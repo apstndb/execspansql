@@ -194,6 +194,15 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
      --param='songinfo:STRUCT<SongName STRING, ArtistNames ARRAY<STRUCT<FirstName STRING, LastName STRING>>>("Imagination", [("Elena", "Campbell"), ("Hannah", "Harris")])'
 ```
 
+### (Experimental) Cloud Trace integration
+
+```sh
+$ execspansql $DATABASE_ID --sql "SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}" --query-mode=PROFILE --experimental-trace-project=$PROJECT_ID
+```
+
+![trace.png](docs/trace.png)
+
+
 ## Limitations
 
 * Supports only json and yaml format

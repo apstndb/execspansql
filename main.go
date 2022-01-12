@@ -15,6 +15,14 @@ import (
 
 	"encoding/json"
 
+	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	octrace "go.opencensus.io/trace"
+	oteloc "go.opentelemetry.io/otel/bridge/opencensus"
+
+	"go.opentelemetry.io/otel"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -25,6 +33,7 @@ import (
 	"go.uber.org/zap"
 
 	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spannerotel/interceptor"
 	"github.com/itchyny/gojq"
 	"github.com/jessevdk/go-flags"
 	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
@@ -67,6 +76,7 @@ type opts struct {
 	JqFromFile           string            `long:"filter-file" description:"(--from-file of jq)"`
 	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
 	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
+	TraceProject         string            `long:"experimental-trace-project"`
 	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration     `long:"timeout" default:"10m" description:"Maximum time to wait for the SQL query to complete"`
 	TimestampBound       struct {
@@ -183,6 +193,27 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 	}
 }
 
+func cloudOperationsExporter(project string) (sdktrace.SpanExporter, error) {
+	exporter, err := texporter.New(texporter.WithProjectID(project))
+	if err != nil {
+		return nil, fmt.Errorf("texporter.New: %v", err)
+	}
+	return exporter, err
+}
+
+func TracerProvider(project string) (*sdktrace.TracerProvider, error) {
+	exp, err := cloudOperationsExporter(project)
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		// Always be sure to batch in production.
+		sdktrace.WithBatcher(exp),
+	)
+	return tp, nil
+}
+
 func _main() error {
 	o, err := processFlags()
 	if err != nil {
@@ -206,9 +237,33 @@ func _main() error {
 		return err
 	}
 
+	doTrace := o.TraceProject != ""
+	if doTrace {
+		tp, err := TracerProvider(o.TraceProject)
+		if err != nil {
+			return err
+		}
+
+		otel.SetTracerProvider(tp)
+		octrace.DefaultTracer = oteloc.NewTracer(tp.Tracer("bridge"))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Cleanly shutdown and flush telemetry when the application exits.
+		defer func(ctx context.Context) {
+			// Do not make the application hang when it is shutdown.
+			ctx, cancel = context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+			if err := tp.Shutdown(ctx); err != nil {
+				log.Fatal(err)
+			}
+		}(ctx)
+	}
+
 	logGrpc := o.LogGrpc
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Positional.Database, logGrpc)
+	client, err := newClient(ctx, o.Project, o.Instance, o.Positional.Database, logGrpc, doTrace)
 	if err != nil {
 		return err
 	}
@@ -252,12 +307,16 @@ func _main() error {
 	return printResult(enc, jqQuery.Run(object))
 }
 
-func newClient(ctx context.Context, project, instance, database string, logGrpc bool) (*spanner.Client, error) {
+func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
 	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
 
 	var copts []option.ClientOption
 	if logGrpc {
 		copts = logGrpcClientOptions()
+	}
+
+	if doTrace {
+		copts = append(copts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptor.StreamInterceptor(interceptor.WithDefaultDecorators()))))
 	}
 
 	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
