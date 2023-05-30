@@ -12,44 +12,46 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
   * Large result sets over 10MB 
 * Embedded jq
 * Emit gRPC message logs
+* (Experimental) CSV output
 
 This tool is still pre-release quality and none of guarantees.
 
 ## Usage
 
 ```
-$ go get -u github.com/apstndb/execspansql
+$ go install github.com/apstndb/execspansql@latest
 ```
 ```
 Usage:
   execspansql [OPTIONS] [database]
 
 Application Options:
-      --sql=                                SQL query text; exclusive with --sql-file.
-      --sql-file=                           File name contains SQL query; exclusive with --sql
-  -p, --project=                            (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
-  -i, --instance=                           (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
-      --query-mode=[NORMAL|PLAN|PROFILE]    Query mode. (default: NORMAL)
-      --format=[json|yaml]                  Output format. (default: json)
-      --redact-rows                         Redact result rows from output
-  -c, --compact-output                      Compact JSON output(--compact-output of jq)
-      --filter=                             jq filter
-  -r, --raw-output                          (--raw-output of jq)
-      --filter-file=                        (--from-file of jq)
-      --param=                              [name]:[Cloud Spanner type(PLAN only) or literal]
-      --log-grpc                            Show gRPC logs
-      --enable-partitioned-dml              Execute DML statement using Partitioned DML
-      --timeout=                            Maximum time to wait for the SQL query to complete (default: 10m)
+      --sql=                                   SQL query text; exclusive with --sql-file.
+      --sql-file=                              File name contains SQL query; exclusive with --sql
+  -p, --project=                               (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
+  -i, --instance=                              (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
+      --query-mode=[NORMAL|PLAN|PROFILE]       Query mode. (default: NORMAL)
+      --format=[json|yaml|experimental_csv]    Output format. (default: json)
+      --redact-rows                            Redact result rows from output
+  -c, --compact-output                         Compact JSON output(--compact-output of jq)
+      --filter=                                jq filter
+  -r, --raw-output                             (--raw-output of jq)
+      --filter-file=                           (--from-file of jq)
+      --param=                                 [name]:[Cloud Spanner type(PLAN only) or literal]
+      --log-grpc                               Show gRPC logs
+      --experimental-trace-project=
+      --enable-partitioned-dml                 Execute DML statement using Partitioned DML
+      --timeout=                               Maximum time to wait for the SQL query to complete (default: 10m)
 
 Timestamp Bound:
-      --strong                              Perform a strong query.
-      --read-timestamp=TIMESTAMP            Perform a query at the given timestamp. (micro-seconds precision)
+      --strong                                 Perform a strong query.
+      --read-timestamp=TIMESTAMP               Perform a query at the given timestamp. (micro-seconds precision)
 
 Help Options:
-  -h, --help                                Show this help message
+  -h, --help                                   Show this help message
 
 Arguments:
-  database:                                 (required) ID of the database.
+  database:                                    (required) ID of the database.
 ```
 
 ## Notable features
