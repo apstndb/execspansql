@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"io"
 	"regexp"
@@ -68,7 +69,7 @@ type opts struct {
 	Project              string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
 	Instance             string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
 	QueryMode            string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE"`
-	Format               string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml"`
+	Format               string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml" choice:"experimental_csv"`
 	RedactRows           bool              `long:"redact-rows" description:"Redact result rows from output"`
 	CompactOutput        bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
 	JqFilter             string            `long:"filter" description:"jq filter"`
@@ -294,6 +295,10 @@ func _main() error {
 		return err
 	}
 
+	if o.Format == "experimental_csv" {
+		return writeCsv(os.Stdout, rs)
+	}
+
 	object, err := toProtojsonObject(rs)
 	if err != nil {
 		return err
@@ -305,6 +310,41 @@ func _main() error {
 	}
 
 	return printResult(enc, jqQuery.Run(object))
+}
+
+func writeCsv(writer io.Writer, rs *spannerpb.ResultSet) error {
+	var header []string
+	fields := rs.GetMetadata().GetRowType().GetFields()
+	for _, field := range fields {
+		header = append(header, field.GetName())
+	}
+
+	var records [][]string
+	for _, row := range rs.GetRows() {
+		var record []string
+		for i, value := range row.Values {
+			s, err := gcvToStringExperimental(&spanner.GenericColumnValue{
+				Type:  fields[i].GetType(),
+				Value: value,
+			})
+			if err != nil {
+				return err
+			}
+			record = append(record, s)
+		}
+		records = append(records, record)
+	}
+	csvWriter := csv.NewWriter(writer)
+	defer csvWriter.Flush()
+	err := csvWriter.Write(header)
+	if err != nil {
+		return err
+	}
+	err = csvWriter.WriteAll(records)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
