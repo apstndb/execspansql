@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
+	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
