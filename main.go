@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -30,14 +29,14 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpczap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"go.uber.org/zap"
 
 	"cloud.google.com/go/spanner"
+	"cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerotel/interceptor"
 	"github.com/itchyny/gojq"
 	"github.com/jessevdk/go-flags"
-	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -56,7 +55,7 @@ func init() {
 	if os.Getenv("DEBUG") != "" {
 		debuglog = log.New(os.Stderr, "", log.LstdFlags)
 	} else {
-		debuglog = log.New(ioutil.Discard, "", log.LstdFlags)
+		debuglog = log.New(io.Discard, "", log.LstdFlags)
 	}
 }
 
@@ -130,7 +129,7 @@ func readFileOrDefault(filename, s string) (string, error) {
 	if filename == "" {
 		return s, nil
 	}
-	b, err := ioutil.ReadFile(filename)
+	b, err := os.ReadFile(filename)
 	if err != nil {
 		return "", err
 	}
@@ -144,16 +143,16 @@ func logGrpcClientOptions() []option.ClientOption {
 
 	return []option.ClientOption{
 		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
-			grpc_zap.PayloadUnaryClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
+			grpczap.PayloadUnaryClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
 				return true
 			}),
-			grpc_zap.UnaryClientInterceptor(zapLogger),
+			grpczap.UnaryClientInterceptor(zapLogger),
 		)),
 		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
-			grpc_zap.PayloadStreamClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
+			grpczap.PayloadStreamClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
 				return true
 			}),
-			grpc_zap.StreamClientInterceptor(zapLogger),
+			grpczap.StreamClientInterceptor(zapLogger),
 		)),
 	}
 }
@@ -363,7 +362,6 @@ func newClient(ctx context.Context, project, instance, database string, logGrpc 
 		SessionPoolConfig: spanner.SessionPoolConfig{
 			MaxOpened:           1,
 			MinOpened:           1,
-			WriteSessions:       0,
 			TrackSessionHandles: true,
 		},
 	}, copts...)

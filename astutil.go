@@ -6,10 +6,10 @@ import (
 	"strconv"
 
 	"cloud.google.com/go/spanner"
-	"github.com/MakeNowJust/memefish/pkg/ast"
-	"github.com/MakeNowJust/memefish/pkg/parser"
-	"github.com/MakeNowJust/memefish/pkg/token"
-	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
+	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/cloudspannerecosystem/memefish"
+	"github.com/cloudspannerecosystem/memefish/ast"
+	"github.com/cloudspannerecosystem/memefish/token"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -223,8 +223,8 @@ func parseExpr(s string) (expr ast.Expr, err error) {
 	file := &token.File{
 		Buffer: s,
 	}
-	p := &parser.Parser{
-		Lexer: &parser.Lexer{File: file},
+	p := &memefish.Parser{
+		Lexer: &memefish.Lexer{File: file},
 	}
 	return p.ParseExpr()
 }
@@ -238,8 +238,8 @@ func parseType(s string) (typ ast.Type, err error) {
 	file := &token.File{
 		Buffer: s,
 	}
-	p := &parser.Parser{
-		Lexer: &parser.Lexer{File: file},
+	p := &memefish.Parser{
+		Lexer: &memefish.Lexer{File: file},
 	}
 	return p.ParseType()
 }
