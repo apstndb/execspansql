@@ -30,6 +30,16 @@ type spannerNullableValue interface {
 	fmt.Stringer
 }
 
+type nullBytes []byte
+
+func (n nullBytes) IsNull() bool {
+	return n == nil
+}
+
+func (n nullBytes) String() string {
+	return fmt.Sprintf("0x%s", hex.EncodeToString(n))
+}
+
 // gcvToStringExperimental is simple implementation of Cloud Spanner value formatter.
 // It fully utilizes String() method in Cloud Spanner client library if possible.
 func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) {
@@ -47,18 +57,7 @@ func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) 
 	case spannerpb.TypeCode_STRING:
 		return gcvElemToStringExperimental[spanner.NullString](value)
 	case spannerpb.TypeCode_BYTES:
-		var v []byte
-
-		if err := value.Decode(&v); err != nil {
-			return "", err
-		}
-
-		if v == nil {
-			return nullString, nil
-		}
-
-		// Note: Use 0x{hex} format because it is simpler than base64
-		return fmt.Sprintf("0x%s", hex.EncodeToString(v)), nil
+		return gcvElemToStringExperimental[nullBytes](value)
 	case spannerpb.TypeCode_ARRAY:
 		// Note: This format is not intended to be parseable.
 
