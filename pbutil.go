@@ -11,7 +11,7 @@ func valueFromSpannerpbType(typ *spannerpb.Type) (*structpb.Value, error) {
 	// Only STRUCT needs a non-null value.
 	case spannerpb.TypeCode_STRUCT:
 		var values []*structpb.Value
-		for range typ.StructType.GetFields() {
+		for i := len(typ.StructType.GetFields()); i > 0; i-- {
 			values = append(values, structpb.NewNullValue())
 		}
 		return structpb.NewListValue(&structpb.ListValue{Values: values}), nil

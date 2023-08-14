@@ -512,33 +512,3 @@ func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consume
 		Metadata:   rowIter.Metadata,
 	}, nil
 }
-
-func generateParams(ss map[string]string, permitType bool) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	for name, code := range ss {
-		if typ, err := parseType(code); permitType && err == nil {
-			debuglog.Println(name, "ast.Type.SQL():", typ.SQL())
-			value, err := astTypeToGenericColumnValue(typ)
-			if err != nil {
-				return nil, fmt.Errorf("error on processing param `%s`: %w", name, err)
-			}
-
-			debuglog.Println(name, "spannerpb.Type:", value.Type)
-			result[name] = value
-			continue
-		} else if expr, err := parseExpr(code); err == nil {
-			debuglog.Println(name, "ast.Expr.SQL():", expr.SQL())
-			value, err := astExprToGenericColumnValue(expr)
-			if err != nil {
-				return nil, fmt.Errorf("error on processing param `%s`: %w", name, err)
-			}
-
-			debuglog.Println(name, "spannerpb.Type:", value.Type)
-			result[name] = value
-			continue
-		} else {
-			return nil, fmt.Errorf("error on parsing param `%s`: %w", name, err)
-		}
-	}
-	return result, nil
-}
