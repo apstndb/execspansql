@@ -79,6 +79,7 @@ type opts struct {
 	TraceProject         string            `long:"experimental-trace-project"`
 	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration     `long:"timeout" default:"10m" description:"Maximum time to wait for the SQL query to complete"`
+	TryPartitionQuery    bool              `long:"try-partition-query" description:"(Experimental) Check whether the query can be executed as partition query or not"`
 	TimestampBound       struct {
 		Strong        bool   `long:"strong" description:"Perform a strong query."`
 		ReadTimestamp string `long:"read-timestamp" description:"Perform a query at the given timestamp. (micro-seconds precision)" value-name:"TIMESTAMP"`
@@ -162,10 +163,12 @@ type queryMode interface{ isQueryMode() }
 type single struct{ spanner.TimestampBound }
 type readWrite struct{}
 type partitionedDML struct{}
+type partitionQuery struct{}
 
 func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
+func (p partitionQuery) isQueryMode() {}
 
 func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*spannerpb.ResultSet, error) {
 	var rs *spannerpb.ResultSet
@@ -273,23 +276,48 @@ func _main() error {
 	if err != nil {
 		return err
 	}
+
+	var tb spanner.TimestampBound
+	if o.TimestampBound.ReadTimestamp != "" {
+		ts, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp)
+		if err != nil {
+			return err
+		}
+		tb = spanner.ReadTimestamp(ts)
+	} else {
+		tb = spanner.StrongRead()
+	}
+
 	var m queryMode
 	switch {
 	case o.EnablePartitionedDML:
 		m = partitionedDML{}
 	case dmlRe.MatchString(query):
 		m = readWrite{}
-	case o.TimestampBound.ReadTimestamp != "":
-		ts, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp)
+	default:
+		m = single{tb}
+	}
+
+	stmt := spanner.Statement{SQL: query, Params: paramMap}
+
+	if o.TryPartitionQuery {
+		bt, err := client.BatchReadOnlyTransaction(ctx, spanner.StrongRead())
 		if err != nil {
 			return err
 		}
-		m = single{spanner.ReadTimestamp(ts)}
-	default:
-		m = single{spanner.StrongRead()}
+		defer bt.Close()
+
+		_, err = bt.PartitionQuery(ctx, stmt, spanner.PartitionOptions{})
+		if err != nil {
+			return err
+		}
+
+		bt.Cleanup(ctx)
+		fmt.Println("success")
+		return nil
 	}
 
-	rs, err := runInNewTransaction(ctx, client, spanner.Statement{SQL: query, Params: paramMap}, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+	rs, err := runInNewTransaction(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
 	if err != nil {
 		return err
 	}
