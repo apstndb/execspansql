@@ -13,6 +13,7 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
 * Embedded jq
 * Emit gRPC message logs
 * (Experimental) CSV output
+* (Experimental) Check whether the query can be executed as a partition query or not.
 
 This tool is still pre-release quality and none of guarantees.
 
@@ -42,6 +43,7 @@ Application Options:
       --experimental-trace-project=
       --enable-partitioned-dml                 Execute DML statement using Partitioned DML
       --timeout=                               Maximum time to wait for the SQL query to complete (default: 10m)
+      --try-partition-query                    (Experimental) Check whether the query can be executed as partition query or not
 
 Timestamp Bound:
       --strong                                 Perform a strong query.
@@ -203,6 +205,19 @@ $ execspansql $DATABASE_ID --sql "SELECT * FROM Singers@{FORCE_INDEX=SingersByFi
 ```
 
 ![trace.png](docs/trace.png)
+
+### (Experimental) `--try-partition-query`
+
+Check whether the query can be executed as partition query or not.
+
+```
+$ execspansql ${DATABASE_ID} --sql='SELECT * FROM Singers JOIN Albums USING(SingerId)' --try-partition-query
+success
+
+$ execspansql ${DATABASE_ID} --sql='SELECT * FROM Singers JOIN Concerts USING(SingerId)' --try-partition-query
+2023/08/31 16:43:33 rpc error: code = InvalidArgument desc = Query is not root partitionable since it does not have a DistributedUnion at the root. Please run EXPLAIN for query plan details.
+exit status 1
+```
 
 
 ## Limitations
