@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
-	octrace "go.opencensus.io/trace"
 	oteloc "go.opentelemetry.io/otel/bridge/opencensus"
 
 	"go.opentelemetry.io/otel"
@@ -248,7 +247,7 @@ func _main() error {
 		}
 
 		otel.SetTracerProvider(tp)
-		octrace.DefaultTracer = oteloc.NewTracer(tp.Tracer("bridge"))
+		oteloc.InstallTraceBridge()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
