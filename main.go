@@ -230,6 +230,12 @@ func _main() error {
 	if err != nil {
 		return err
 	}
+
+	// Overwrite to "." because gojq don't support empty query
+	if jqFilter == "" {
+		jqFilter = "."
+	}
+
 	jqQuery, err := gojq.Parse(jqFilter)
 
 	mode := spannerpb.ExecuteSqlRequest_QueryMode(spannerpb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
