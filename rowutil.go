@@ -46,8 +46,10 @@ func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) 
 	switch value.Type.GetCode() {
 	case spannerpb.TypeCode_BOOL:
 		return gcvElemToStringExperimental[spanner.NullBool](value)
-	case spannerpb.TypeCode_INT64:
+	case spannerpb.TypeCode_INT64, spannerpb.TypeCode_ENUM:
 		return gcvElemToStringExperimental[spanner.NullInt64](value)
+	case spannerpb.TypeCode_FLOAT32:
+		return gcvElemToStringExperimental[spanner.NullFloat32](value)
 	case spannerpb.TypeCode_FLOAT64:
 		return gcvElemToStringExperimental[spanner.NullFloat64](value)
 	case spannerpb.TypeCode_TIMESTAMP:
@@ -56,7 +58,7 @@ func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) 
 		return gcvElemToStringExperimental[spanner.NullDate](value)
 	case spannerpb.TypeCode_STRING:
 		return gcvElemToStringExperimental[spanner.NullString](value)
-	case spannerpb.TypeCode_BYTES:
+	case spannerpb.TypeCode_BYTES, spannerpb.TypeCode_PROTO:
 		return gcvElemToStringExperimental[nullBytes](value)
 	case spannerpb.TypeCode_ARRAY:
 		// Note: This format is not intended to be parseable.
