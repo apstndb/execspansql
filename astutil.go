@@ -199,6 +199,8 @@ func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*spannerpb.Type, error) {
 		return &spannerpb.Type{Code: spannerpb.TypeCode_INT64}, nil
 	case ast.Float64TypeName:
 		return &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64}, nil
+	case ast.Float32TypeName:
+		return &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT32}, nil
 	case ast.StringTypeName:
 		return &spannerpb.Type{Code: spannerpb.TypeCode_STRING}, nil
 	case ast.BytesTypeName:
