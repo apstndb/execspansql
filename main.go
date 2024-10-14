@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"deedles.dev/xiter"
 	"encoding/csv"
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 	"time"
 
 	"fmt"
@@ -14,7 +16,6 @@ import (
 	"os"
 
 	"encoding/json"
-
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	oteloc "go.opentelemetry.io/otel/bridge/opencensus"
 
@@ -345,33 +346,29 @@ func _main() error {
 }
 
 func writeCsv(writer io.Writer, rs *spannerpb.ResultSet) error {
-	var header []string
 	fields := rs.GetMetadata().GetRowType().GetFields()
-	for _, field := range fields {
-		header = append(header, field.GetName())
-	}
 
-	var records [][]string
-	for _, row := range rs.GetRows() {
-		var record []string
-		for i, value := range row.Values {
-			s, err := gcvToStringExperimental(&spanner.GenericColumnValue{
-				Type:  fields[i].GetType(),
-				Value: value,
-			})
-			if err != nil {
-				return err
-			}
-			record = append(record, s)
-		}
-		records = append(records, record)
-	}
+	types := slices.Collect(xiter.Map(slices.Values(fields), (*spannerpb.StructType_Field).GetType))
+
+	records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
+		return slices.Collect(
+			xiter.Map(
+				xiter.Zip(slices.Values(types), slices.Values(row.Values)),
+				Uncurry(Must2(typeValueToStringExperimental)),
+			),
+		)
+	}))
+
 	csvWriter := csv.NewWriter(writer)
 	defer csvWriter.Flush()
+
+	header := slices.Collect(xiter.Map(slices.Values(fields), (*spannerpb.StructType_Field).GetName))
+
 	err := csvWriter.Write(header)
 	if err != nil {
 		return err
 	}
+
 	err = csvWriter.WriteAll(records)
 	if err != nil {
 		return err
@@ -526,12 +523,7 @@ func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consume
 			return nil
 		}
 
-		vs, err := rowValues(r)
-		if err != nil {
-			return err
-		}
-
-		rows = append(rows, &structpb.ListValue{Values: vs})
+		rows = append(rows, &structpb.ListValue{Values: rowValues(r)})
 		return nil
 	})
 	if err != nil {
