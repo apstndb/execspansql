@@ -68,6 +68,11 @@ func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error)
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
 			Value: structpb.NewStringValue(t.Value.Value),
 		}, nil
+	case *ast.JSONLiteral:
+		return spanner.GenericColumnValue{
+			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
+			Value: structpb.NewStringValue(t.Value.Value),
+		}, nil
 	case *ast.ArrayLiteral:
 		var values []*structpb.Value
 		var typ *spannerpb.Type
@@ -199,6 +204,8 @@ func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*spannerpb.Type, error) {
 		return &spannerpb.Type{Code: spannerpb.TypeCode_INT64}, nil
 	case ast.Float64TypeName:
 		return &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64}, nil
+	case ast.Float32TypeName:
+		return &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT32}, nil
 	case ast.StringTypeName:
 		return &spannerpb.Type{Code: spannerpb.TypeCode_STRING}, nil
 	case ast.BytesTypeName:
@@ -209,6 +216,8 @@ func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*spannerpb.Type, error) {
 		return &spannerpb.Type{Code: spannerpb.TypeCode_TIMESTAMP}, nil
 	case ast.NumericTypeName:
 		return &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC}, nil
+	case ast.JSONTypeName:
+		return &spannerpb.Type{Code: spannerpb.TypeCode_JSON}, nil
 	default:
 		return nil, fmt.Errorf("t.Name is unknown: %s", t.Name)
 	}
