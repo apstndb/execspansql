@@ -24,6 +24,7 @@ func TestGenerateParams(t *testing.T) {
 			Input: map[string]string{
 				"int64_type":        "INT64",
 				"float64_type":      "FLOAT64",
+				"float32_type":      "FLOAT32",
 				"string_type":       `STRING`,
 				"bytes_type":        `BYTES`,
 				"bool_type":         "BOOL",
@@ -48,6 +49,10 @@ func TestGenerateParams(t *testing.T) {
 					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64},
 					Value: structpb.NewNullValue(),
 				},
+				"float32_type": spanner.GenericColumnValue{
+					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT32},
+					Value: structpb.NewNullValue(),
+				},
 				"bytes_type": spanner.GenericColumnValue{
 					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BYTES},
 					Value: structpb.NewNullValue(),
@@ -66,6 +71,10 @@ func TestGenerateParams(t *testing.T) {
 				},
 				"numeric_type": spanner.GenericColumnValue{
 					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
+					Value: structpb.NewNullValue(),
+				},
+				"json_type": spanner.GenericColumnValue{
+					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
 					Value: structpb.NewNullValue(),
 				},
 				"struct_type": spanner.GenericColumnValue{
@@ -89,10 +98,6 @@ func TestGenerateParams(t *testing.T) {
 					},
 					Value: structpb.NewNullValue(),
 				},
-				"json_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
-					Value: structpb.NewNullValue(),
-				},
 			},
 			ExpectErr: false,
 		},
@@ -108,10 +113,9 @@ func TestGenerateParams(t *testing.T) {
 				"date_literal":         `DATE "1970-01-01"`,
 				"timestamp_literal":    `TIMESTAMP "1970-01-01T00:00:00Z"`,
 				"numeric_literal":      `NUMERIC "3.14"`,
+				"json_literal":         `JSON '{"number_value": 42}'`,
 				"struct_literal":       `STRUCT<float64_value FLOAT64, string_value STRING>(3.14, "foo")`,
 				"string_array_literal": `["foo", "bar", "baz"]`,
-				// TODO: JSON literal not supported in memefish
-				// "json_literal":   `JSON '{"number_value": 42}'`,
 			},
 			PermitType: false,
 			ExpectResult: map[string]interface{}{
@@ -150,6 +154,10 @@ func TestGenerateParams(t *testing.T) {
 				"numeric_literal": spanner.GenericColumnValue{
 					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
 					Value: structpb.NewStringValue("3.14"),
+				},
+				"json_literal": spanner.GenericColumnValue{
+					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
+					Value: structpb.NewStringValue(`{"number_value": 42}`),
 				},
 				"struct_literal": spanner.GenericColumnValue{
 					Type: &spannerpb.Type{
