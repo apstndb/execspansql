@@ -148,11 +148,7 @@ func astTypeToGenericColumnValue(t ast.Type) (spanner.GenericColumnValue, error)
 	if err != nil {
 		return spanner.GenericColumnValue{}, err
 	}
-	v, err := valueFromSpannerpbType(typ)
-	if err != nil {
-		return spanner.GenericColumnValue{}, err
-	}
-	return spanner.GenericColumnValue{Type: typ, Value: v}, nil
+	return spanner.GenericColumnValue{Type: typ, Value: valueFromSpannerpbType(typ)}, nil
 }
 
 func astTypeToSpannerpbType(t ast.Type) (*spannerpb.Type, error) {
