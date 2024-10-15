@@ -33,7 +33,7 @@ import (
 	"go.uber.org/zap"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerotel/interceptor"
 	"github.com/itchyny/gojq"
 	"github.com/jessevdk/go-flags"
@@ -170,8 +170,8 @@ func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
 func (p partitionQuery) isQueryMode() {}
 
-func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*spannerpb.ResultSet, error) {
-	var rs *spannerpb.ResultSet
+func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
+	var rs *sppb.ResultSet
 	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
@@ -183,12 +183,12 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 		return consumeRowIter(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
-		return &spannerpb.ResultSet{
-			Metadata: &spannerpb.ResultSetMetadata{
-				RowType: &spannerpb.StructType{},
+		return &sppb.ResultSet{
+			Metadata: &sppb.ResultSetMetadata{
+				RowType: &sppb.StructType{},
 			},
-			Stats: &spannerpb.ResultSetStats{
-				RowCount: &spannerpb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			Stats: &sppb.ResultSetStats{
+				RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
 			},
 		}, err
 	default:
@@ -239,7 +239,7 @@ func _main() error {
 
 	jqQuery, err := gojq.Parse(jqFilter)
 
-	mode := spannerpb.ExecuteSqlRequest_QueryMode(spannerpb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
+	mode := sppb.ExecuteSqlRequest_QueryMode(sppb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
 
 	query, err := readFileOrDefault(o.SqlFile, o.Sql)
 	if err != nil {
@@ -278,7 +278,7 @@ func _main() error {
 	}
 	defer client.Close()
 
-	paramMap, err := generateParams(o.Param, mode == spannerpb.ExecuteSqlRequest_PLAN)
+	paramMap, err := generateParams(o.Param, mode == sppb.ExecuteSqlRequest_PLAN)
 	if err != nil {
 		return err
 	}
@@ -345,10 +345,10 @@ func _main() error {
 	return printResult(enc, jqQuery.Run(object))
 }
 
-func writeCsv(writer io.Writer, rs *spannerpb.ResultSet) error {
+func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
 	fields := rs.GetMetadata().GetRowType().GetFields()
 
-	types := slices.Collect(xiter.Map(slices.Values(fields), (*spannerpb.StructType_Field).GetType))
+	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
 
 	records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
 		return slices.Collect(
@@ -362,7 +362,7 @@ func writeCsv(writer io.Writer, rs *spannerpb.ResultSet) error {
 	csvWriter := csv.NewWriter(writer)
 	defer csvWriter.Flush()
 
-	header := slices.Collect(xiter.Map(slices.Values(fields), (*spannerpb.StructType_Field).GetName))
+	header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
 
 	err := csvWriter.Write(header)
 	if err != nil {
@@ -466,7 +466,7 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 	}
 }
 
-func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*spannerpb.ResultSet, error) {
+func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*sppb.ResultSet, error) {
 	consumeResult, err := consumeRowIterImpl(rowIter, redactRows)
 	if err != nil {
 		return nil, err
@@ -479,9 +479,9 @@ func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*spannerpb.R
 	return rs, nil
 }
 
-func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultSet, error) {
+func convertToResultSet(consumeResult *consumeRowIterResult) (*sppb.ResultSet, error) {
 	// Leave null if fields are not populated
-	rs := &spannerpb.ResultSet{
+	rs := &sppb.ResultSet{
 		Rows:     consumeResult.Rows,
 		Metadata: consumeResult.Metadata,
 	}
@@ -496,12 +496,12 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 	}
 
 	if consumeResult.QueryPlan != nil || queryStats != nil || consumeResult.RowCount != 0 {
-		rs.Stats = &spannerpb.ResultSetStats{
+		rs.Stats = &sppb.ResultSetStats{
 			QueryPlan:  consumeResult.QueryPlan,
 			QueryStats: queryStats,
 		}
 		if consumeResult.RowCount != 0 {
-			rs.Stats.RowCount = &spannerpb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
+			rs.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
 		}
 	}
 
@@ -509,8 +509,8 @@ func convertToResultSet(consumeResult *consumeRowIterResult) (*spannerpb.ResultS
 }
 
 type consumeRowIterResult struct {
-	Metadata   *spannerpb.ResultSetMetadata
-	QueryPlan  *spannerpb.QueryPlan
+	Metadata   *sppb.ResultSetMetadata
+	QueryPlan  *sppb.QueryPlan
 	QueryStats map[string]interface{}
 	RowCount   int64
 	Rows       []*structpb.ListValue
