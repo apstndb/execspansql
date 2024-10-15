@@ -19,6 +19,8 @@ This tool is still pre-release quality and none of guarantees.
 
 ## Usage
 
+Local build requires Go 1.23.
+
 ```
 $ go install github.com/apstndb/execspansql@latest
 ```
@@ -54,6 +56,15 @@ Help Options:
 
 Arguments:
   database:                                    (required) ID of the database.
+```
+
+You can use container image in GitHub Container Registry.
+```
+$ docker run --rm -t -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/credentials.json -v "${HOME}/.config/gcloud/application_default_credentials.json:/tmp/credentials.json:ro" \
+    ghcr.io/apstndb/execspansql/execspansql:latest -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
+# or use specific version
+$ docker run --rm -t -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/credentials.json -v "${HOME}/.config/gcloud/application_default_credentials.json:/tmp/credentials.json:ro" \
+    ghcr.io/apstndb/execspansql/execspansql:v0.3.3 -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 ```
 
 ## Notable features
