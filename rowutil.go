@@ -1,26 +1,19 @@
 package main
 
 import (
-	"encoding/hex"
-	"fmt"
-	"strings"
-
 	"cloud.google.com/go/spanner"
 	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/structpb"
+	"slices"
+	"spheric.cloud/xiter"
 )
 
-func rowValues(r *spanner.Row) ([]*structpb.Value, error) {
-	var vs []*structpb.Value
-	for i := 0; i < r.Size(); i++ {
-		var gcv spanner.GenericColumnValue
-		err := r.Column(i, &gcv)
-		if err != nil {
-			return nil, err
-		}
-		vs = append(vs, gcv.Value)
-	}
-	return vs, nil
+func rowValues(r *spanner.Row) []*structpb.Value {
+	return slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))
 }
 
 const nullString = "<null>"
@@ -32,12 +25,31 @@ type spannerNullableValue interface {
 
 type nullBytes []byte
 
-func (n nullBytes) IsNull() bool {
-	return n == nil
+func (nb nullBytes) IsNull() bool {
+	return nb == nil
 }
 
-func (n nullBytes) String() string {
-	return fmt.Sprintf("0x%s", hex.EncodeToString(n))
+func (nb nullBytes) String() string {
+	return fmt.Sprintf("0x%s", hex.EncodeToString(nb))
+}
+
+// DecodeSpanner convert a string to a nullBytes value
+func (nb *nullBytes) DecodeSpanner(val interface{}) (err error) {
+	strVal, ok := val.(string)
+	if !ok {
+		return fmt.Errorf("failed to decode nullBytes: %v", val)
+	}
+	b, err := base64.StdEncoding.DecodeString(strVal)
+	if err != nil {
+		return err
+	}
+	*nb = b
+	return nil
+}
+
+func structFieldPairToString(field *spannerpb.StructType_Field, value *structpb.Value) (string, error) {
+	s, err := typeValueToStringExperimental(field.GetType(), value)
+	return s + lo.If(field.GetName() != "", " AS "+field.GetName()).Else(""), err
 }
 
 // gcvToStringExperimental is simple implementation of Cloud Spanner value formatter.
@@ -67,28 +79,27 @@ func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) 
 			return nullString, nil
 		}
 
-		var fieldStrings []string
-		for _, v := range value.Value.GetListValue().GetValues() {
-			if s, err := typeValueToStringExperimental(value.Type.GetArrayElementType(), v); err != nil {
-				return "", err
-			} else {
-				fieldStrings = append(fieldStrings, s)
-			}
+		fieldsStr, err := tryJoin(xiter.MapErr(
+			slices.Values(value.Value.GetListValue().GetValues()),
+			func(elemValue *structpb.Value) (string, error) {
+				return typeValueToStringExperimental(value.Type.GetArrayElementType(), elemValue)
+			}), ", ")
+		if err != nil {
+			return "", err
 		}
-		return fmt.Sprintf("[%v]", strings.Join(fieldStrings, ", ")), nil
+		return "[" + fieldsStr + "]", nil
 	case spannerpb.TypeCode_STRUCT:
 		// Note: This format is not intended to be parseable.
 
-		var fieldStrings []string
-		for i, field := range value.Type.GetStructType().GetFields() {
-			if s, err := typeValueToStringExperimental(field.GetType(), value.Value.GetListValue().GetValues()[i]); err != nil {
-				return "", err
-			} else {
-				fieldStrings = append(fieldStrings, fmt.Sprintf("%v AS %v", s, field.GetName()))
-			}
+		fieldsStr, err := tryJoin(xiter.MapErr(xiter.Zip(
+			slices.Values(value.Type.GetStructType().GetFields()),
+			slices.Values(value.Value.GetListValue().GetValues()),
+		), UncurryErr(structFieldPairToString)), ", ")
+		if err != nil {
+			return "", err
 		}
 
-		return fmt.Sprintf("(%v)", strings.Join(fieldStrings, ", ")), nil
+		return "(" + fieldsStr + ")", nil
 	case spannerpb.TypeCode_NUMERIC:
 		return gcvElemToStringExperimental[spanner.NullNumeric](value)
 	case spannerpb.TypeCode_JSON:
@@ -96,7 +107,7 @@ func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) 
 	case spannerpb.TypeCode_TYPE_CODE_UNSPECIFIED:
 		fallthrough
 	default:
-		return "", fmt.Errorf("unknown type: %v", value.Type.String())
+		return "", fmt.Errorf("unknown type: %v(code:%v)", value.Type.String(), int32(value.Type.GetCode()))
 	}
 }
 

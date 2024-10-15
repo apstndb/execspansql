@@ -3,12 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
-	"deedles.dev/xiter"
 	"encoding/csv"
 	"errors"
 	"io"
 	"regexp"
 	"slices"
+	"spheric.cloud/xiter"
 	"time"
 
 	"fmt"

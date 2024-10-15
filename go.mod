@@ -6,7 +6,6 @@ toolchain go1.23.2
 
 require (
 	cloud.google.com/go/spanner v1.70.0
-	deedles.dev/xiter v0.1.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.24.0
 	github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241001002934-cdd31d52fd7e
@@ -23,6 +22,7 @@ require (
 	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/yaml.v3 v3.0.1
+	spheric.cloud/xiter v0.0.0-20240904151420-c999f37a46b2
 )
 
 require (
