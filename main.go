@@ -163,12 +163,10 @@ type queryMode interface{ isQueryMode() }
 type single struct{ spanner.TimestampBound }
 type readWrite struct{}
 type partitionedDML struct{}
-type partitionQuery struct{}
 
 func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
-func (p partitionQuery) isQueryMode() {}
 
 func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
 	var rs *sppb.ResultSet
@@ -238,6 +236,9 @@ func _main() error {
 	}
 
 	jqQuery, err := gojq.Parse(jqFilter)
+	if err != nil {
+		return err
+	}
 
 	mode := sppb.ExecuteSqlRequest_QueryMode(sppb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
 
