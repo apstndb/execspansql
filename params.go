@@ -18,14 +18,14 @@ func generateParams(ss map[string]string, permitType bool) (map[string]interface
 	return result, nil
 }
 
-func generateParam(code string, permitType bool) (spanner.GenericColumnValue, error) {
+func generateParam(code string, permitType bool) (*spanner.GenericColumnValue, error) {
 	if permitType {
 		typ, err := parseType(code)
 		if err == nil {
 			debuglog.Println("ast.Type.SQL():", typ.SQL())
 			value, err := astTypeToGenericColumnValue(typ)
 			if err != nil {
-				return spanner.GenericColumnValue{}, fmt.Errorf("error on generating value for type: %w", err)
+				return nil, fmt.Errorf("error on generating value for type: %w", err)
 			}
 			return value, err
 		}
@@ -35,7 +35,7 @@ func generateParam(code string, permitType bool) (spanner.GenericColumnValue, er
 
 	expr, err := parseExpr(code)
 	if err != nil {
-		return spanner.GenericColumnValue{}, fmt.Errorf("error on parsing expr: %w", err)
+		return nil, fmt.Errorf("error on parsing expr: %w", err)
 	}
 
 	debuglog.Println("ast.Expr.SQL():", expr.SQL())
@@ -43,7 +43,7 @@ func generateParam(code string, permitType bool) (spanner.GenericColumnValue, er
 	value, err := astExprToGenericColumnValue(expr)
 
 	if err != nil {
-		return spanner.GenericColumnValue{}, fmt.Errorf("error on generating value: %w", err)
+		return nil, fmt.Errorf("error on generating value: %w", err)
 	}
 
 	debuglog.Println("spannerpb.Type:", value.Type)

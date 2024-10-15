@@ -13,63 +13,63 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error) {
+func astExprToGenericColumnValue(t ast.Expr) (*spanner.GenericColumnValue, error) {
 	switch t := t.(type) {
 	case *ast.NullLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
 			Value: structpb.NewNullValue(),
 		}, nil
 	case *ast.BoolLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BOOL},
 			Value: structpb.NewBoolValue(t.Value),
 		}, nil
 	case *ast.IntLiteral:
 		i, err := strconv.ParseInt(t.Value, t.Base, 64)
 		if err != nil {
-			return spanner.GenericColumnValue{}, err
+			return nil, err
 		}
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
 			Value: structpb.NewStringValue(strconv.FormatInt(i, 10)),
 		}, nil
 	case *ast.FloatLiteral:
 		i, err := strconv.ParseFloat(t.Value, 64)
 		if err != nil {
-			return spanner.GenericColumnValue{}, err
+			return nil, err
 		}
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64},
 			Value: structpb.NewNumberValue(i),
 		}, nil
 	case *ast.StringLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
 			Value: structpb.NewStringValue(t.Value),
 		}, nil
 	case *ast.BytesLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BYTES},
 			Value: structpb.NewStringValue(base64.StdEncoding.EncodeToString(t.Value)),
 		}, nil
 	case *ast.DateLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_DATE},
 			Value: structpb.NewStringValue(t.Value.Value),
 		}, nil
 	case *ast.TimestampLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_TIMESTAMP},
 			Value: structpb.NewStringValue(t.Value.Value),
 		}, nil
 	case *ast.NumericLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
 			Value: structpb.NewStringValue(t.Value.Value),
 		}, nil
 	case *ast.JSONLiteral:
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
 			Value: structpb.NewStringValue(t.Value.Value),
 		}, nil
@@ -79,7 +79,7 @@ func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error)
 		for _, v := range t.Values {
 			value, err := astExprToGenericColumnValue(v)
 			if err != nil {
-				return spanner.GenericColumnValue{}, err
+				return nil, err
 			}
 			values = append(values, value.Value)
 		}
@@ -87,16 +87,16 @@ func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error)
 			var err error
 			typ, err = astTypeToSpannerpbType(t.Type)
 			if err != nil {
-				return spanner.GenericColumnValue{}, err
+				return nil, err
 			}
 		} else if len(t.Values) > 0 {
 			value, err := astExprToGenericColumnValue(t.Values[0])
 			if err != nil {
-				return spanner.GenericColumnValue{}, err
+				return nil, err
 			}
 			typ = value.Type
 		}
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type:  &spannerpb.Type{ArrayElementType: typ, Code: spannerpb.TypeCode_ARRAY},
 			Value: structpb.NewListValue(&structpb.ListValue{Values: values}),
 		}, nil
@@ -106,7 +106,7 @@ func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error)
 		for i, v := range t.Values {
 			genValue, err := astExprToGenericColumnValue(v)
 			if err != nil {
-				return spanner.GenericColumnValue{}, err
+				return nil, err
 			}
 			var name string
 			var typ *spannerpb.Type
@@ -118,7 +118,7 @@ func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error)
 				if field.Type != nil {
 					genType, err := astTypeToGenericColumnValue(field.Type)
 					if err != nil {
-						return spanner.GenericColumnValue{}, err
+						return nil, err
 					}
 					typ = genType.Type
 				}
@@ -132,23 +132,23 @@ func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error)
 			})
 			values = append(values, genValue.Value)
 		}
-		return spanner.GenericColumnValue{
+		return &spanner.GenericColumnValue{
 			Type: &spannerpb.Type{
 				StructType: &spannerpb.StructType{Fields: fields},
 				Code:       spannerpb.TypeCode_STRUCT},
 			Value: structpb.NewListValue(&structpb.ListValue{Values: values}),
 		}, nil
 	default:
-		return spanner.GenericColumnValue{}, fmt.Errorf("not implemented: %s", t.SQL())
+		return nil, fmt.Errorf("not implemented: %s", t.SQL())
 	}
 }
 
-func astTypeToGenericColumnValue(t ast.Type) (spanner.GenericColumnValue, error) {
+func astTypeToGenericColumnValue(t ast.Type) (*spanner.GenericColumnValue, error) {
 	typ, err := astTypeToSpannerpbType(t)
 	if err != nil {
-		return spanner.GenericColumnValue{}, err
+		return nil, err
 	}
-	return spanner.GenericColumnValue{Type: typ, Value: valueFromSpannerpbType(typ)}, nil
+	return &spanner.GenericColumnValue{Type: typ, Value: valueFromSpannerpbType(typ)}, nil
 }
 
 func astTypeToSpannerpbType(t ast.Type) (*spannerpb.Type, error) {
