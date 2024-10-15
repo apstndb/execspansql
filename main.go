@@ -355,7 +355,7 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
 		return slices.Collect(
 			xiter.Map(
 				xiter.Zip(slices.Values(types), slices.Values(row.Values)),
-				Uncurry(Must2(typeValueToStringExperimental)),
+				tupled(must2(typeValueToStringExperimental)),
 			),
 		)
 	}))

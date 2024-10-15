@@ -1,21 +1,18 @@
 package main
 
 import (
-	"fmt"
-
 	"cloud.google.com/go/spanner"
+	"fmt"
 )
 
 func generateParams(ss map[string]string, permitType bool) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	for name, code := range ss {
-		value, err := generateParam(code, permitType)
+	return tryMapMap(ss, func(k, v string) (interface{}, error) {
+		value, err := generateParam(v, permitType)
 		if err != nil {
-			return nil, fmt.Errorf("error on %v: %w", name, err)
+			return nil, fmt.Errorf("error on %v: %w", k, err)
 		}
-		result[name] = value
-	}
-	return result, nil
+		return value, nil
+	})
 }
 
 func generateParam(code string, permitType bool) (*spanner.GenericColumnValue, error) {

@@ -94,7 +94,7 @@ func gcvToStringExperimental(value *spanner.GenericColumnValue) (string, error) 
 		fieldsStr, err := tryJoin(xiter.MapErr(xiter.Zip(
 			slices.Values(value.Type.GetStructType().GetFields()),
 			slices.Values(value.Value.GetListValue().GetValues()),
-		), UncurryErr(structFieldPairToString)), ", ")
+		), tupledWithErr(structFieldPairToString)), ", ")
 		if err != nil {
 			return "", err
 		}
