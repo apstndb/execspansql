@@ -6,18 +6,20 @@ import (
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
 	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"context"
 	_ "embed"
 	"github.com/apstndb/gsqlsep"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/structpb"
 	"slices"
 	"spheric.cloud/xiter"
 	"testing"
@@ -150,8 +152,8 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 
 		rowIter := cli.Single().QueryWithOptions(ctx,
-			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @b, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
-			spanner.QueryOptions{Mode: spannerpb.ExecuteSqlRequest_PLAN.Enum()})
+			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @bl, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
+			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
 		defer rowIter.Stop()
 
 		err = skipRowIter(rowIter)
@@ -159,8 +161,222 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		t.Log(prototext.Format(rowIter.Metadata.GetRowType()))
+		want := &sppb.StructType{
+			Fields: []*sppb.StructType_Field{
+				{Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_FLOAT32}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_FLOAT64}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_BYTES}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_DATE}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_TIMESTAMP}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_NUMERIC}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY,
+					ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
+						{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+					}}}}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING}}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_JSON}},
+			},
+		}
+		got := rowIter.Metadata.GetRowType()
+		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+			t.Errorf(diff)
+		}
 	})
 
+	t.Run("NORMAL with generateParams", func(t *testing.T) {
+		for _, tcase := range []struct {
+			desc  string
+			input string
+			want  spanner.GenericColumnValue
+		}{
+			{
+				"INT64",
+				"1",
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
+					Value: structpb.NewStringValue("1"),
+				},
+			},
+			{
+				"FLOAT64",
+				"1.0",
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT64},
+					Value: structpb.NewNumberValue(1.0),
+				},
+			},
+			{
+				"STRING",
+				`'foo'`,
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_STRING},
+					Value: structpb.NewStringValue("foo"),
+				},
+			},
+			{
+				"BYTES",
+				`b'foo'`,
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_BYTES},
+					Value: structpb.NewStringValue("Zm9v"),
+				},
+			},
+			{
+				"DATE",
+				`DATE '1970-01-01'`,
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_DATE},
+					Value: structpb.NewStringValue("1970-01-01"),
+				},
+			},
+			{
+				"TIMESTAMP",
+				`TIMESTAMP '1970-01-01T00:00:00Z'`,
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_TIMESTAMP},
+					Value: structpb.NewStringValue("1970-01-01T00:00:00Z"),
+				},
+			},
+			{
+				"NUMERIC",
+				`NUMERIC '1.0'`,
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_NUMERIC},
+					Value: structpb.NewStringValue("1"),
+				},
+			},
+			{
+				"ARRAY<STRUCT<int64_value INT64>>",
+				`ARRAY<STRUCT<int64_value INT64>>[STRUCT(1)]`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{
+						Code: sppb.TypeCode_ARRAY,
+						ArrayElementType: &sppb.Type{
+							Code: sppb.TypeCode_STRUCT,
+							StructType: &sppb.StructType{
+								Fields: []*sppb.StructType_Field{
+									{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+								},
+							},
+						},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{
+						Values: []*structpb.Value{
+							structpb.NewListValue(&structpb.ListValue{
+								Values: []*structpb.Value{
+									structpb.NewStringValue("1")}})}}),
+				},
+			},
+			{
+				"ARRAY<STRUCT<int64_value INT64>> verbose",
+				`ARRAY<STRUCT<int64_value INT64>>[STRUCT<int64_value INT64>(1)]`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{
+						Fields: []*sppb.StructType_Field{{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}}}},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{
+						Values: []*structpb.Value{
+							structpb.NewListValue(&structpb.ListValue{
+								Values: []*structpb.Value{
+									structpb.NewStringValue("1")}})}}),
+				},
+			},
+			{
+				"ARRAY<STRING>",
+				`['foo']`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{
+						Code:             sppb.TypeCode_ARRAY,
+						ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("foo")}}),
+				},
+			},
+			{
+				"JSON",
+				`JSON '{"foo": "bar"}'`,
+				spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_JSON},
+					Value: structpb.NewStringValue(`{"foo":"bar"}`),
+				},
+			},
+			// { "FLOAT32", "1.0", spanner.GenericColumnValue{ Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT32}, Value: structpb.NewNumberValue(1.0), }, },
+			// "f32":   "CAST(1.0 AS FLOAT32)",
+			/*
+				"f64":           "1.0",
+				"s":             `'foo'`,
+				"bs":            `b'foo'`,
+				"bl":            `TRUE`,
+				"dt":            `DATE '1970-01-01'`,
+				"ts":            `TIMESTAMP '1970-01-01T00:00:00Z'`,
+				"n":             `NUMERIC '1.0'`,
+				"a_str":         `ARRAY<STRUCT<int64_value INT64>>[STRUCT(1)]`,
+				"a_str_verbose": `ARRAY<STRUCT<int64_value INT64>>[STRUCT<int64_value INT64>(1)]`,
+				"a_s":           `['foo']`,
+				"j":             `JSON '{"foo": "bar"}'`,
+
+			*/
+		} {
+			t.Run(tcase.desc, func(t *testing.T) {
+				params, err := generateParams(map[string]string{"v": tcase.input}, false)
+				rowIter := cli.Single().QueryWithOptions(ctx,
+					spanner.Statement{SQL: "SELECT @v AS v", Params: params},
+					spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_NORMAL.Enum()})
+				defer rowIter.Stop()
+
+				rows, err := xiter.TryCollect(rowIterSeq(rowIter))
+				if err != nil {
+					t.Error(err)
+					return
+				}
+
+				if lenRows := len(rows); lenRows != 1 {
+					t.Errorf("len(rows) must be 1, but: %v", lenRows)
+					return
+				}
+				row := rows[0]
+				if row.Size() != 1 {
+					t.Errorf("row.Size() must be 1, but: %v", row.Size())
+					return
+				}
+
+				var got spanner.GenericColumnValue
+				err = row.ColumnByName("v", &got)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if diff := cmp.Diff(tcase.want, got, protocmp.Transform()); diff != "" {
+					t.Errorf(diff)
+					return
+				}
+			})
+		}
+		_ = &sppb.StructType{
+			Fields: []*sppb.StructType_Field{
+				{Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_FLOAT64}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_BYTES}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_DATE}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_TIMESTAMP}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_NUMERIC}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY,
+					ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
+						{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+					}}}}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY,
+					ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
+						{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+					}}}}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING}}},
+				{Type: &sppb.Type{Code: sppb.TypeCode_JSON}},
+			},
+		}
+	})
 	require.NoError(t, err)
 }
