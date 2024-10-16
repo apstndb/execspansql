@@ -11,6 +11,7 @@ import (
 	_ "embed"
 	"github.com/apstndb/gsqlsep"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/docker/go-connections/nat"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -23,7 +24,6 @@ import (
 	"slices"
 	"spheric.cloud/xiter"
 	"testing"
-	"time"
 )
 
 //go:embed testdata/ddl.sql
@@ -104,10 +104,12 @@ func setupDB(t *testing.T, ctx context.Context, opts ...option.ClientOption) {
 func TestWithCloudSpannerEmulator(t *testing.T) {
 	ctx := context.Background()
 	t.Log("start emulator")
+
+	const grpcPort nat.Port = "9010/tcp"
 	req := testcontainers.ContainerRequest{
 		Image:        "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
-		ExposedPorts: []string{"9020/tcp", "9010/tcp"},
-		WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(5 * time.Minute),
+		ExposedPorts: []string{string(grpcPort)},
+		WaitingFor:   wait.ForLog("gRPC server listening at"),
 	}
 	spannerEmu, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
@@ -122,12 +124,12 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 
 	t.Log("emulator started")
 
-	grpcPort, err := spannerEmu.PortEndpoint(ctx, "9010/tcp", "")
+	grpcEndpoint, err := spannerEmu.PortEndpoint(ctx, grpcPort, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("grpcPort:", grpcPort)
-	opts := []option.ClientOption{option.WithEndpoint(grpcPort), option.WithoutAuthentication(), option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
+	t.Log("grpcEndpoint:", grpcEndpoint)
+	opts := []option.ClientOption{option.WithEndpoint(grpcEndpoint), option.WithoutAuthentication(), option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
 
 	setupDB(t, ctx, opts...)
 
