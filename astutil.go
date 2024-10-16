@@ -133,37 +133,42 @@ func astTypeToSpannerpbType(t ast.Type) (*sppb.Type, error) {
 	case *ast.SimpleType:
 		return astSimpleTypeToSpannerpbType(t)
 	case *ast.ArrayType:
-		var typ *sppb.Type
-		if t.Item != nil {
-			var err error
-			typ, err = astTypeToSpannerpbType(t.Item)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		if t.Item == nil {
 			return nil, fmt.Errorf("t is unknown")
+		}
+
+		typ, err := astTypeToSpannerpbType(t.Item)
+		if err != nil {
+			return nil, err
 		}
 		return &sppb.Type{ArrayElementType: typ, Code: sppb.TypeCode_ARRAY}, nil
 	case *ast.StructType:
 		var fields []*sppb.StructType_Field
-		for _, f := range t.Fields {
+		fields, err := xiter.TryCollect(xiter.MapErr(slices.Values(t.Fields), func(f *ast.StructField) (*sppb.StructType_Field, error) {
 			t, err := astTypeToSpannerpbType(f.Type)
 			if err != nil {
 				return nil, err
 			}
-			var name string
-			if f.Ident != nil {
-				name = f.Ident.Name
-			}
-			fields = append(fields, &sppb.StructType_Field{
-				Name: name,
+
+			return &sppb.StructType_Field{
+				Name: nameOrEmpty(f.Ident),
 				Type: t,
-			})
+			}, nil
+		}))
+		if err != nil {
+			return nil, err
 		}
 		return &sppb.Type{StructType: &sppb.StructType{Fields: fields}, Code: sppb.TypeCode_STRUCT}, nil
 	default:
 		return nil, fmt.Errorf("not implemented: %s", t.SQL())
 	}
+}
+
+func nameOrEmpty(ident *ast.Ident) string {
+	if ident != nil {
+		return ident.Name
+	}
+	return ""
 }
 
 func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*sppb.Type, error) {
@@ -202,28 +207,23 @@ func parseExpr(s string) (expr ast.Expr, err error) {
 			err = fmt.Errorf("recover from panic: %v", r)
 		}
 	}()
-	file := &token.File{
-		Buffer: s,
-	}
-	p := &memefish.Parser{
-		Lexer: &memefish.Lexer{File: file},
-	}
-	return p.ParseExpr()
+	return newParser(s).ParseExpr()
 }
 
+func newParser(s string) *memefish.Parser {
+	return &memefish.Parser{
+		Lexer: &memefish.Lexer{File: &token.File{
+			Buffer: s,
+		}},
+	}
+}
 func parseType(s string) (typ ast.Type, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("recover from panic: %v", r)
 		}
 	}()
-	file := &token.File{
-		Buffer: s,
-	}
-	p := &memefish.Parser{
-		Lexer: &memefish.Lexer{File: file},
-	}
-	return p.ParseType()
+	return newParser(s).ParseType()
 }
 
 func gcvToValue(gcv *spanner.GenericColumnValue) *structpb.Value {
@@ -231,11 +231,6 @@ func gcvToValue(gcv *spanner.GenericColumnValue) *structpb.Value {
 }
 
 func generateStructTypeField(field *ast.StructField, gcv *spanner.GenericColumnValue) (*sppb.StructType_Field, error) {
-	var name string
-	if field.Ident != nil {
-		name = field.Ident.Name
-	}
-
 	var typ *sppb.Type
 	if field.Type != nil {
 		typeGcv, err := astTypeToGenericColumnValue(field.Type)
@@ -248,7 +243,7 @@ func generateStructTypeField(field *ast.StructField, gcv *spanner.GenericColumnV
 	}
 
 	return &sppb.StructType_Field{
-		Name: name,
+		Name: nameOrEmpty(field.Ident),
 		Type: typ,
 	}, nil
 }
