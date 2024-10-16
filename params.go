@@ -5,13 +5,16 @@ import (
 	"fmt"
 )
 
+// generateParams returns map for spanner.Statement.Params.
+// All values of map are spanner.GenericColumnValue.
 func generateParams(ss map[string]string, permitType bool) (map[string]interface{}, error) {
 	return tryMapMap(ss, func(k, v string) (interface{}, error) {
 		value, err := generateParam(v, permitType)
 		if err != nil {
 			return nil, fmt.Errorf("error on %v: %w", k, err)
 		}
-		return value, nil
+		// Note: google-cloud-go supports only spanner.GenericColumnValue, not *spanner.GenericColumnValue.
+		return *value, nil
 	})
 }
 
