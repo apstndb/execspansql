@@ -19,11 +19,7 @@ This tool is still pre-release quality and none of guarantees.
 
 ## Usage
 
-Local build requires Go 1.23.
-
-```
-$ go install github.com/apstndb/execspansql@latest
-```
+You can use [released binaries](https://github.com/apstndb/execspansql/releases).
 ```
 Usage:
   execspansql [OPTIONS] [database]
@@ -56,6 +52,12 @@ Help Options:
 
 Arguments:
   database:                                    (required) ID of the database.
+```
+
+Local build requires Go 1.23.
+
+```
+$ go install github.com/apstndb/execspansql@latest
 ```
 
 You can use container image in GitHub Container Registry.
