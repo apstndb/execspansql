@@ -60,10 +60,10 @@ Arguments:
 
 You can use container image in GitHub Container Registry.
 ```
-$ docker run --rm -t -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/credentials.json -v "${HOME}/.config/gcloud/application_default_credentials.json:/tmp/credentials.json:ro" \
+$ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.json:/home/nonroot/.config/gcloud/application_default_credentials.json:ro" \
     ghcr.io/apstndb/execspansql/execspansql:latest -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 # or use specific version
-$ docker run --rm -t -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/credentials.json -v "${HOME}/.config/gcloud/application_default_credentials.json:/tmp/credentials.json:ro" \
+$ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.json:/home/nonroot/.config/gcloud/application_default_credentials.json:ro" \
     ghcr.io/apstndb/execspansql/execspansql:v0.3.3 -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 ```
 
