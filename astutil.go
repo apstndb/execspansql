@@ -151,7 +151,7 @@ func astTypeToSpannerpbType(t ast.Type) (*sppb.Type, error) {
 			}
 
 			return &sppb.StructType_Field{
-				Name: nameOrEmpty(f.Ident),
+				Name: nameOrEmpty(f),
 				Type: t,
 			}, nil
 		}))
@@ -164,9 +164,9 @@ func astTypeToSpannerpbType(t ast.Type) (*sppb.Type, error) {
 	}
 }
 
-func nameOrEmpty(ident *ast.Ident) string {
-	if ident != nil {
-		return ident.Name
+func nameOrEmpty(f *ast.StructField) string {
+	if f != nil && f.Ident != nil {
+		return f.Ident.Name
 	}
 	return ""
 }
@@ -232,7 +232,7 @@ func gcvToValue(gcv *spanner.GenericColumnValue) *structpb.Value {
 
 func generateStructTypeField(field *ast.StructField, gcv *spanner.GenericColumnValue) (*sppb.StructType_Field, error) {
 	var typ *sppb.Type
-	if field.Type != nil {
+	if field != nil && field.Type != nil {
 		typeGcv, err := astTypeToGenericColumnValue(field.Type)
 		if err != nil {
 			return nil, err
@@ -241,9 +241,8 @@ func generateStructTypeField(field *ast.StructField, gcv *spanner.GenericColumnV
 	} else {
 		typ = gcv.Type
 	}
-
 	return &sppb.StructType_Field{
-		Name: nameOrEmpty(field.Ident),
+		Name: nameOrEmpty(field),
 		Type: typ,
 	}, nil
 }
