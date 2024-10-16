@@ -107,7 +107,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 	req := testcontainers.ContainerRequest{
 		Image:        "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
 		ExposedPorts: []string{"9020/tcp", "9010/tcp"},
-		WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(2 * time.Minute),
+		WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(5 * time.Minute),
 	}
 	spannerEmu, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
