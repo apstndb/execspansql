@@ -112,7 +112,12 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		ContainerRequest: req,
 		Started:          true,
 	})
-	defer spannerEmu.Terminate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = spannerEmu.Terminate(ctx)
+	}()
 
 	t.Log("emulator started")
 
@@ -182,7 +187,8 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 		got := rowIter.Metadata.GetRowType()
 		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
-			t.Errorf(diff)
+			t.Error(diff)
+			return
 		}
 	})
 
@@ -303,25 +309,12 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 					Value: structpb.NewStringValue(`{"foo":"bar"}`),
 				},
 			},
-			// { "FLOAT32", "1.0", spanner.GenericColumnValue{ Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT32}, Value: structpb.NewNumberValue(1.0), }, },
-			// "f32":   "CAST(1.0 AS FLOAT32)",
-			/*
-				"f64":           "1.0",
-				"s":             `'foo'`,
-				"bs":            `b'foo'`,
-				"bl":            `TRUE`,
-				"dt":            `DATE '1970-01-01'`,
-				"ts":            `TIMESTAMP '1970-01-01T00:00:00Z'`,
-				"n":             `NUMERIC '1.0'`,
-				"a_str":         `ARRAY<STRUCT<int64_value INT64>>[STRUCT(1)]`,
-				"a_str_verbose": `ARRAY<STRUCT<int64_value INT64>>[STRUCT<int64_value INT64>(1)]`,
-				"a_s":           `['foo']`,
-				"j":             `JSON '{"foo": "bar"}'`,
-
-			*/
 		} {
 			t.Run(tcase.desc, func(t *testing.T) {
 				params, err := generateParams(map[string]string{"v": tcase.input}, false)
+				if err != nil {
+					t.Fatal(err)
+				}
 				rowIter := cli.Single().QueryWithOptions(ctx,
 					spanner.Statement{SQL: "SELECT @v AS v", Params: params},
 					spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_NORMAL.Enum()})
@@ -350,7 +343,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 					return
 				}
 				if diff := cmp.Diff(tcase.want, got, protocmp.Transform()); diff != "" {
-					t.Errorf(diff)
+					t.Error(diff)
 					return
 				}
 			})
