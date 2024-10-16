@@ -1,31 +1,31 @@
 package main
 
 import (
-	"fmt"
-
 	"cloud.google.com/go/spanner"
+	"fmt"
 )
 
+// generateParams returns map for spanner.Statement.Params.
+// All values of map are spanner.GenericColumnValue.
 func generateParams(ss map[string]string, permitType bool) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	for name, code := range ss {
-		value, err := generateParam(code, permitType)
+	return tryMapMap(ss, func(k, v string) (interface{}, error) {
+		value, err := generateParam(v, permitType)
 		if err != nil {
-			return nil, fmt.Errorf("error on %v: %w", name, err)
+			return nil, fmt.Errorf("error on %v: %w", k, err)
 		}
-		result[name] = value
-	}
-	return result, nil
+		// Note: google-cloud-go supports only spanner.GenericColumnValue, not *spanner.GenericColumnValue.
+		return *value, nil
+	})
 }
 
-func generateParam(code string, permitType bool) (spanner.GenericColumnValue, error) {
+func generateParam(code string, permitType bool) (*spanner.GenericColumnValue, error) {
 	if permitType {
 		typ, err := parseType(code)
 		if err == nil {
 			debuglog.Println("ast.Type.SQL():", typ.SQL())
 			value, err := astTypeToGenericColumnValue(typ)
 			if err != nil {
-				return spanner.GenericColumnValue{}, fmt.Errorf("error on generating value for type: %w", err)
+				return nil, fmt.Errorf("error on generating value for type: %w", err)
 			}
 			return value, err
 		}
@@ -35,7 +35,7 @@ func generateParam(code string, permitType bool) (spanner.GenericColumnValue, er
 
 	expr, err := parseExpr(code)
 	if err != nil {
-		return spanner.GenericColumnValue{}, fmt.Errorf("error on parsing expr: %w", err)
+		return nil, fmt.Errorf("error on parsing expr: %w", err)
 	}
 
 	debuglog.Println("ast.Expr.SQL():", expr.SQL())
@@ -43,7 +43,7 @@ func generateParam(code string, permitType bool) (spanner.GenericColumnValue, er
 	value, err := astExprToGenericColumnValue(expr)
 
 	if err != nil {
-		return spanner.GenericColumnValue{}, fmt.Errorf("error on generating value: %w", err)
+		return nil, fmt.Errorf("error on generating value: %w", err)
 	}
 
 	debuglog.Println("spannerpb.Type:", value.Type)

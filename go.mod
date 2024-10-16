@@ -1,6 +1,8 @@
 module github.com/apstndb/execspansql
 
-go 1.21
+go 1.23.0
+
+toolchain go1.23.2
 
 require (
 	cloud.google.com/go/spanner v1.70.0
@@ -11,6 +13,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/jessevdk/go-flags v1.6.1
+	github.com/samber/lo v1.47.0
 	go.opentelemetry.io/otel v1.29.0
 	go.opentelemetry.io/otel/bridge/opencensus v1.27.0
 	go.opentelemetry.io/otel/sdk v1.29.0
@@ -19,6 +22,7 @@ require (
 	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/yaml.v3 v3.0.1
+	spheric.cloud/xiter v0.0.0-20240904151420-c999f37a46b2
 )
 
 require (

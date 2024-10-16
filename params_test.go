@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -38,52 +38,52 @@ func TestGenerateParams(t *testing.T) {
 			PermitType: true,
 			ExpectResult: map[string]interface{}{
 				"int64_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
+					Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
 					Value: structpb.NewNullValue(),
 				},
 				"string_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
+					Type:  &sppb.Type{Code: sppb.TypeCode_STRING},
 					Value: structpb.NewNullValue(),
 				},
 				"float64_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64},
+					Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT64},
 					Value: structpb.NewNullValue(),
 				},
 				"float32_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT32},
+					Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT32},
 					Value: structpb.NewNullValue(),
 				},
 				"bytes_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BYTES},
+					Type:  &sppb.Type{Code: sppb.TypeCode_BYTES},
 					Value: structpb.NewNullValue(),
 				},
 				"bool_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BOOL},
+					Type:  &sppb.Type{Code: sppb.TypeCode_BOOL},
 					Value: structpb.NewNullValue(),
 				},
 				"date_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_DATE},
+					Type:  &sppb.Type{Code: sppb.TypeCode_DATE},
 					Value: structpb.NewNullValue(),
 				},
 				"timestamp_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_TIMESTAMP},
+					Type:  &sppb.Type{Code: sppb.TypeCode_TIMESTAMP},
 					Value: structpb.NewNullValue(),
 				},
 				"numeric_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
+					Type:  &sppb.Type{Code: sppb.TypeCode_NUMERIC},
 					Value: structpb.NewNullValue(),
 				},
 				"json_type": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
+					Type:  &sppb.Type{Code: sppb.TypeCode_JSON},
 					Value: structpb.NewNullValue(),
 				},
 				"struct_type": spanner.GenericColumnValue{
-					Type: &spannerpb.Type{
-						Code: spannerpb.TypeCode_STRUCT,
-						StructType: &spannerpb.StructType{Fields: []*spannerpb.StructType_Field{
+					Type: &sppb.Type{
+						Code: sppb.TypeCode_STRUCT,
+						StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
 							{
 								Name: "int64_value",
-								Type: &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
+								Type: &sppb.Type{Code: sppb.TypeCode_INT64},
 							},
 						}},
 					},
@@ -92,9 +92,9 @@ func TestGenerateParams(t *testing.T) {
 					}),
 				},
 				"string_array_type": spanner.GenericColumnValue{
-					Type: &spannerpb.Type{
-						Code:             spannerpb.TypeCode_ARRAY,
-						ArrayElementType: &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
+					Type: &sppb.Type{
+						Code:             sppb.TypeCode_ARRAY,
+						ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING},
 					},
 					Value: structpb.NewNullValue(),
 				},
@@ -120,56 +120,56 @@ func TestGenerateParams(t *testing.T) {
 			PermitType: false,
 			ExpectResult: map[string]interface{}{
 				"int_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
+					Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
 					Value: structpb.NewStringValue("42"),
 				},
 				"string_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
+					Type:  &sppb.Type{Code: sppb.TypeCode_STRING},
 					Value: structpb.NewStringValue("foo"),
 				},
 				"float_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64},
+					Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT64},
 					Value: structpb.NewNumberValue(3.14),
 				},
 				"bytes_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BYTES},
+					Type:  &sppb.Type{Code: sppb.TypeCode_BYTES},
 					Value: structpb.NewStringValue(base64.RawStdEncoding.EncodeToString([]byte("bar"))),
 				},
 				"true_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BOOL},
+					Type:  &sppb.Type{Code: sppb.TypeCode_BOOL},
 					Value: structpb.NewBoolValue(true),
 				},
 				"false_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BOOL},
+					Type:  &sppb.Type{Code: sppb.TypeCode_BOOL},
 					Value: structpb.NewBoolValue(false),
 				},
 				"date_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_DATE},
+					Type:  &sppb.Type{Code: sppb.TypeCode_DATE},
 					Value: structpb.NewStringValue("1970-01-01"),
 				},
 				"timestamp_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_TIMESTAMP},
+					Type:  &sppb.Type{Code: sppb.TypeCode_TIMESTAMP},
 					Value: structpb.NewStringValue("1970-01-01T00:00:00Z"),
 				},
 				"numeric_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
+					Type:  &sppb.Type{Code: sppb.TypeCode_NUMERIC},
 					Value: structpb.NewStringValue("3.14"),
 				},
 				"json_literal": spanner.GenericColumnValue{
-					Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
+					Type:  &sppb.Type{Code: sppb.TypeCode_JSON},
 					Value: structpb.NewStringValue(`{"number_value": 42}`),
 				},
 				"struct_literal": spanner.GenericColumnValue{
-					Type: &spannerpb.Type{
-						Code: spannerpb.TypeCode_STRUCT,
-						StructType: &spannerpb.StructType{Fields: []*spannerpb.StructType_Field{
+					Type: &sppb.Type{
+						Code: sppb.TypeCode_STRUCT,
+						StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
 							{
 								Name: "float64_value",
-								Type: &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64},
+								Type: &sppb.Type{Code: sppb.TypeCode_FLOAT64},
 							},
 							{
 								Name: "string_value",
-								Type: &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
+								Type: &sppb.Type{Code: sppb.TypeCode_STRING},
 							},
 						}},
 					},
@@ -178,9 +178,9 @@ func TestGenerateParams(t *testing.T) {
 					}),
 				},
 				"string_array_literal": spanner.GenericColumnValue{
-					Type: &spannerpb.Type{
-						Code:             spannerpb.TypeCode_ARRAY,
-						ArrayElementType: &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
+					Type: &sppb.Type{
+						Code:             sppb.TypeCode_ARRAY,
+						ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING},
 					},
 					Value: structpb.NewListValue(&structpb.ListValue{
 						Values: []*structpb.Value{structpb.NewStringValue("foo"), structpb.NewStringValue("bar"), structpb.NewStringValue("baz")},

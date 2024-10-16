@@ -3,221 +3,199 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
+	"spheric.cloud/xiter"
 	"strconv"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/apiv1/spannerpb"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 	"github.com/cloudspannerecosystem/memefish/token"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func astExprToGenericColumnValue(t ast.Expr) (spanner.GenericColumnValue, error) {
-	switch t := t.(type) {
+func astExprToGenericColumnValue(expr ast.Expr) (*spanner.GenericColumnValue, error) {
+	switch e := expr.(type) {
 	case *ast.NullLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
 			Value: structpb.NewNullValue(),
 		}, nil
 	case *ast.BoolLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BOOL},
-			Value: structpb.NewBoolValue(t.Value),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_BOOL},
+			Value: structpb.NewBoolValue(e.Value),
 		}, nil
 	case *ast.IntLiteral:
-		i, err := strconv.ParseInt(t.Value, t.Base, 64)
+		i, err := strconv.ParseInt(e.Value, e.Base, 64)
 		if err != nil {
-			return spanner.GenericColumnValue{}, err
+			return nil, err
 		}
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_INT64},
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
 			Value: structpb.NewStringValue(strconv.FormatInt(i, 10)),
 		}, nil
 	case *ast.FloatLiteral:
-		i, err := strconv.ParseFloat(t.Value, 64)
+		i, err := strconv.ParseFloat(e.Value, 64)
 		if err != nil {
-			return spanner.GenericColumnValue{}, err
+			return nil, err
 		}
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64},
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT64},
 			Value: structpb.NewNumberValue(i),
 		}, nil
 	case *ast.StringLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
-			Value: structpb.NewStringValue(t.Value),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_STRING},
+			Value: structpb.NewStringValue(e.Value),
 		}, nil
 	case *ast.BytesLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_BYTES},
-			Value: structpb.NewStringValue(base64.StdEncoding.EncodeToString(t.Value)),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_BYTES},
+			Value: structpb.NewStringValue(base64.StdEncoding.EncodeToString(e.Value)),
 		}, nil
 	case *ast.DateLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_DATE},
-			Value: structpb.NewStringValue(t.Value.Value),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_DATE},
+			Value: structpb.NewStringValue(e.Value.Value),
 		}, nil
 	case *ast.TimestampLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_TIMESTAMP},
-			Value: structpb.NewStringValue(t.Value.Value),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_TIMESTAMP},
+			Value: structpb.NewStringValue(e.Value.Value),
 		}, nil
 	case *ast.NumericLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC},
-			Value: structpb.NewStringValue(t.Value.Value),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_NUMERIC},
+			Value: structpb.NewStringValue(e.Value.Value),
 		}, nil
 	case *ast.JSONLiteral:
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{Code: spannerpb.TypeCode_JSON},
-			Value: structpb.NewStringValue(t.Value.Value),
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{Code: sppb.TypeCode_JSON},
+			Value: structpb.NewStringValue(e.Value.Value),
 		}, nil
 	case *ast.ArrayLiteral:
-		var values []*structpb.Value
-		var typ *spannerpb.Type
-		for _, v := range t.Values {
-			value, err := astExprToGenericColumnValue(v)
-			if err != nil {
-				return spanner.GenericColumnValue{}, err
-			}
-			values = append(values, value.Value)
+		gcvs, err := xiter.TryCollect(
+			xiter.MapErr(slices.Values(e.Values), astExprToGenericColumnValue))
+		if err != nil {
+			return nil, err
 		}
-		if t.Type != nil {
-			var err error
-			typ, err = astTypeToSpannerpbType(t.Type)
+
+		var typ *sppb.Type
+		if e.Type != nil {
+			typ, err = astTypeToSpannerpbType(e.Type)
 			if err != nil {
-				return spanner.GenericColumnValue{}, err
+				return nil, err
 			}
-		} else if len(t.Values) > 0 {
-			value, err := astExprToGenericColumnValue(t.Values[0])
-			if err != nil {
-				return spanner.GenericColumnValue{}, err
-			}
-			typ = value.Type
+		} else if len(gcvs) > 0 {
+			typ = gcvs[0].Type
 		}
-		return spanner.GenericColumnValue{
-			Type:  &spannerpb.Type{ArrayElementType: typ, Code: spannerpb.TypeCode_ARRAY},
-			Value: structpb.NewListValue(&structpb.ListValue{Values: values}),
+
+		return &spanner.GenericColumnValue{
+			Type:  &sppb.Type{ArrayElementType: typ, Code: sppb.TypeCode_ARRAY},
+			Value: structpb.NewListValue(&structpb.ListValue{Values: slices.Collect(xiter.Map(slices.Values(gcvs), gcvToValue))}),
 		}, nil
 	case *ast.StructLiteral:
-		var fields []*spannerpb.StructType_Field
-		var values []*structpb.Value
-		for i, v := range t.Values {
-			genValue, err := astExprToGenericColumnValue(v)
-			if err != nil {
-				return spanner.GenericColumnValue{}, err
-			}
-			var name string
-			var typ *spannerpb.Type
-			if len(t.Fields) > i {
-				field := t.Fields[i]
-				if field.Ident != nil {
-					name = field.Ident.Name
-				}
-				if field.Type != nil {
-					genType, err := astTypeToGenericColumnValue(field.Type)
-					if err != nil {
-						return spanner.GenericColumnValue{}, err
-					}
-					typ = genType.Type
-				}
-			}
-			if typ == nil {
-				typ = genValue.Type
-			}
-			fields = append(fields, &spannerpb.StructType_Field{
-				Name: name,
-				Type: typ,
-			})
-			values = append(values, genValue.Value)
+		gcvs, err := xiter.TryCollect(xiter.MapErr(slices.Values(e.Values), astExprToGenericColumnValue))
+		if err != nil {
+			return nil, err
 		}
-		return spanner.GenericColumnValue{
-			Type: &spannerpb.Type{
-				StructType: &spannerpb.StructType{Fields: fields},
-				Code:       spannerpb.TypeCode_STRUCT},
-			Value: structpb.NewListValue(&structpb.ListValue{Values: values}),
+
+		fields, err := xiter.TryCollect(xiter.MapErr(xiter.Zip(
+			slices.Values(e.Fields),
+			slices.Values(gcvs)), tupledWithErr(generateStructTypeField)))
+		if err != nil {
+			return nil, err
+		}
+
+		return &spanner.GenericColumnValue{
+			Type: &sppb.Type{
+				StructType: &sppb.StructType{Fields: fields},
+				Code:       sppb.TypeCode_STRUCT},
+			Value: structpb.NewListValue(&structpb.ListValue{Values: slices.Collect(xiter.Map(slices.Values(gcvs), gcvToValue))}),
 		}, nil
 	default:
-		return spanner.GenericColumnValue{}, fmt.Errorf("not implemented: %s", t.SQL())
+		return nil, fmt.Errorf("not implemented: %s", e.SQL())
 	}
 }
 
-func astTypeToGenericColumnValue(t ast.Type) (spanner.GenericColumnValue, error) {
+func astTypeToGenericColumnValue(t ast.Type) (*spanner.GenericColumnValue, error) {
 	typ, err := astTypeToSpannerpbType(t)
 	if err != nil {
-		return spanner.GenericColumnValue{}, err
+		return nil, err
 	}
-	v, err := valueFromSpannerpbType(typ)
-	if err != nil {
-		return spanner.GenericColumnValue{}, err
-	}
-	return spanner.GenericColumnValue{Type: typ, Value: v}, nil
+	return &spanner.GenericColumnValue{Type: typ, Value: valueFromSpannerpbType(typ)}, nil
 }
 
-func astTypeToSpannerpbType(t ast.Type) (*spannerpb.Type, error) {
+func astTypeToSpannerpbType(t ast.Type) (*sppb.Type, error) {
 	switch t := t.(type) {
 	case *ast.SimpleType:
 		return astSimpleTypeToSpannerpbType(t)
 	case *ast.ArrayType:
-		var typ *spannerpb.Type
-		if t.Item != nil {
-			var err error
-			typ, err = astTypeToSpannerpbType(t.Item)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		if t.Item == nil {
 			return nil, fmt.Errorf("t is unknown")
 		}
-		return &spannerpb.Type{ArrayElementType: typ, Code: spannerpb.TypeCode_ARRAY}, nil
+
+		typ, err := astTypeToSpannerpbType(t.Item)
+		if err != nil {
+			return nil, err
+		}
+		return &sppb.Type{ArrayElementType: typ, Code: sppb.TypeCode_ARRAY}, nil
 	case *ast.StructType:
-		var fields []*spannerpb.StructType_Field
-		for _, f := range t.Fields {
+		var fields []*sppb.StructType_Field
+		fields, err := xiter.TryCollect(xiter.MapErr(slices.Values(t.Fields), func(f *ast.StructField) (*sppb.StructType_Field, error) {
 			t, err := astTypeToSpannerpbType(f.Type)
 			if err != nil {
 				return nil, err
 			}
-			var name string
-			if f.Ident != nil {
-				name = f.Ident.Name
-			}
-			fields = append(fields, &spannerpb.StructType_Field{
-				Name: name,
+
+			return &sppb.StructType_Field{
+				Name: nameOrEmpty(f.Ident),
 				Type: t,
-			})
+			}, nil
+		}))
+		if err != nil {
+			return nil, err
 		}
-		return &spannerpb.Type{StructType: &spannerpb.StructType{Fields: fields}, Code: spannerpb.TypeCode_STRUCT}, nil
+		return &sppb.Type{StructType: &sppb.StructType{Fields: fields}, Code: sppb.TypeCode_STRUCT}, nil
 	default:
 		return nil, fmt.Errorf("not implemented: %s", t.SQL())
 	}
 }
 
-func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*spannerpb.Type, error) {
+func nameOrEmpty(ident *ast.Ident) string {
+	if ident != nil {
+		return ident.Name
+	}
+	return ""
+}
+
+func astSimpleTypeToSpannerpbType(t *ast.SimpleType) (*sppb.Type, error) {
 	if t == nil {
 		return nil, fmt.Errorf("t is nil")
 	}
 	switch t.Name {
 	case ast.BoolTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_BOOL}, nil
+		return &sppb.Type{Code: sppb.TypeCode_BOOL}, nil
 	case ast.Int64TypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_INT64}, nil
+		return &sppb.Type{Code: sppb.TypeCode_INT64}, nil
 	case ast.Float64TypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT64}, nil
+		return &sppb.Type{Code: sppb.TypeCode_FLOAT64}, nil
 	case ast.Float32TypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_FLOAT32}, nil
+		return &sppb.Type{Code: sppb.TypeCode_FLOAT32}, nil
 	case ast.StringTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_STRING}, nil
+		return &sppb.Type{Code: sppb.TypeCode_STRING}, nil
 	case ast.BytesTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_BYTES}, nil
+		return &sppb.Type{Code: sppb.TypeCode_BYTES}, nil
 	case ast.DateTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_DATE}, nil
+		return &sppb.Type{Code: sppb.TypeCode_DATE}, nil
 	case ast.TimestampTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_TIMESTAMP}, nil
+		return &sppb.Type{Code: sppb.TypeCode_TIMESTAMP}, nil
 	case ast.NumericTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_NUMERIC}, nil
+		return &sppb.Type{Code: sppb.TypeCode_NUMERIC}, nil
 	case ast.JSONTypeName:
-		return &spannerpb.Type{Code: spannerpb.TypeCode_JSON}, nil
+		return &sppb.Type{Code: sppb.TypeCode_JSON}, nil
 	default:
 		return nil, fmt.Errorf("t.Name is unknown: %s", t.Name)
 	}
@@ -229,26 +207,43 @@ func parseExpr(s string) (expr ast.Expr, err error) {
 			err = fmt.Errorf("recover from panic: %v", r)
 		}
 	}()
-	file := &token.File{
-		Buffer: s,
-	}
-	p := &memefish.Parser{
-		Lexer: &memefish.Lexer{File: file},
-	}
-	return p.ParseExpr()
+	return newParser(s).ParseExpr()
 }
 
+func newParser(s string) *memefish.Parser {
+	return &memefish.Parser{
+		Lexer: &memefish.Lexer{File: &token.File{
+			Buffer: s,
+		}},
+	}
+}
 func parseType(s string) (typ ast.Type, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("recover from panic: %v", r)
 		}
 	}()
-	file := &token.File{
-		Buffer: s,
+	return newParser(s).ParseType()
+}
+
+func gcvToValue(gcv *spanner.GenericColumnValue) *structpb.Value {
+	return gcv.Value
+}
+
+func generateStructTypeField(field *ast.StructField, gcv *spanner.GenericColumnValue) (*sppb.StructType_Field, error) {
+	var typ *sppb.Type
+	if field.Type != nil {
+		typeGcv, err := astTypeToGenericColumnValue(field.Type)
+		if err != nil {
+			return nil, err
+		}
+		typ = typeGcv.Type
+	} else {
+		typ = gcv.Type
 	}
-	p := &memefish.Parser{
-		Lexer: &memefish.Lexer{File: file},
-	}
-	return p.ParseType()
+
+	return &sppb.StructType_Field{
+		Name: nameOrEmpty(field.Ident),
+		Type: typ,
+	}, nil
 }

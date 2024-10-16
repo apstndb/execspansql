@@ -18,4 +18,4 @@ jobs:
       - uses: ko-build/setup-ko@v0.6
       - run: |
           tag=$(echo ${{ github.ref }} | cut -c11-)
-          ko build -t ${tag} -B
+          ko build -t latest,${tag} -B
