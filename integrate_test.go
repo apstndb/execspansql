@@ -9,14 +9,15 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"context"
 	_ "embed"
+	"fmt"
 	"github.com/apstndb/gsqlsep"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/docker/go-connections/nat"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/testcontainers/testcontainers-go/modules/gcloud"
 	"google.golang.org/api/option"
+	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -32,6 +33,18 @@ var ddl string
 //go:embed testdata/dml.sql
 var dml string
 
+const (
+	projectID  = "fake"
+	instanceID = "fake"
+	databaseID = "fake"
+)
+
+var (
+	projectStr  = fmt.Sprintf("projects/%v", projectID)
+	instanceStr = fmt.Sprintf("%v/instances/%v", projectStr, instanceID)
+	databaseStr = fmt.Sprintf("%v/databases/%v", instanceStr, databaseID)
+)
+
 func setupDB(t *testing.T, ctx context.Context, opts ...option.ClientOption) {
 	t.Helper()
 
@@ -42,10 +55,10 @@ func setupDB(t *testing.T, ctx context.Context, opts ...option.ClientOption) {
 	}
 	defer instanceClient.Close()
 	createInstance, err := instanceClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     "projects/fake",
-		InstanceId: "fake",
+		Parent:     projectStr,
+		InstanceId: instanceID,
 		Instance: &instancepb.Instance{
-			Name:            "projects/fake/instances/fake",
+			Name:            instanceStr,
 			Config:          "regional-asia-northeast1",
 			DisplayName:     "fake",
 			ProcessingUnits: 100,
@@ -69,8 +82,8 @@ func setupDB(t *testing.T, ctx context.Context, opts ...option.ClientOption) {
 			t.Fatal(err)
 		}
 		createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
-			Parent:          "projects/fake/instances/fake",
-			CreateStatement: "CREATE DATABASE fake",
+			Parent:          instanceStr,
+			CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
 			ExtraStatements: gsqlsep.SeparateInputString(ddl),
 		})
 		if err != nil {
@@ -84,7 +97,7 @@ func setupDB(t *testing.T, ctx context.Context, opts ...option.ClientOption) {
 	}
 	t.Log("setup data")
 	{
-		cli, err := spanner.NewClient(ctx, "projects/fake/instances/fake/databases/fake", opts...)
+		cli, err := spanner.NewClient(ctx, databaseStr, opts...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,35 +118,27 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 	ctx := context.Background()
 	t.Log("start emulator")
 
-	const grpcPort nat.Port = "9010/tcp"
-	req := testcontainers.ContainerRequest{
-		Image:        "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
-		ExposedPorts: []string{string(grpcPort)},
-		WaitingFor:   wait.ForLog("gRPC server listening at"),
-	}
-	spannerEmu, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23", testcontainers.WithLogger(testcontainers.TestLogger(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		_ = spannerEmu.Terminate(ctx)
+		if err := spannerContainer.Terminate(ctx); err != nil {
+			t.Logf("failed to terminate container: %s", err)
+		}
 	}()
 
 	t.Log("emulator started")
 
-	grpcEndpoint, err := spannerEmu.PortEndpoint(ctx, grpcPort, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log("grpcEndpoint:", grpcEndpoint)
-	opts := []option.ClientOption{option.WithEndpoint(grpcEndpoint), option.WithoutAuthentication(), option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
+	opts := []option.ClientOption{
+		option.WithEndpoint(spannerContainer.URI),
+		option.WithoutAuthentication(),
+		internaloption.SkipDialSettingsValidation(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
 
 	setupDB(t, ctx, opts...)
 
-	cli, err := spanner.NewClient(ctx, "projects/fake/instances/fake/databases/fake", opts...)
+	cli, err := spanner.NewClient(ctx, databaseStr, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,28 +355,6 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 					return
 				}
 			})
-		}
-		_ = &sppb.StructType{
-			Fields: []*sppb.StructType_Field{
-				{Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_FLOAT64}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_BYTES}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_BOOL}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_DATE}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_TIMESTAMP}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_NUMERIC}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY,
-					ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
-						{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
-					}}}}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY,
-					ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{Fields: []*sppb.StructType_Field{
-						{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
-					}}}}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRING}}},
-				{Type: &sppb.Type{Code: sppb.TypeCode_JSON}},
-			},
 		}
 	})
 	require.NoError(t, err)
