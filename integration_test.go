@@ -1,17 +1,19 @@
 package main
 
 import (
+	"context"
+	_ "embed"
+	"fmt"
+	"slices"
+	"testing"
+
 	"cloud.google.com/go/spanner"
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
 	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"context"
-	_ "embed"
-	"fmt"
 	"github.com/apstndb/gsqlsep"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -22,9 +24,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
-	"slices"
 	"spheric.cloud/xiter"
-	"testing"
 )
 
 //go:embed testdata/ddl.sql
@@ -33,112 +33,115 @@ var ddl string
 //go:embed testdata/dml.sql
 var dml string
 
-const (
-	projectID  = "fake"
-	instanceID = "fake"
-	databaseID = "fake"
-)
+func projectStr(projectID string) string {
+	return fmt.Sprintf("projects/%v", projectID)
+}
 
-var (
-	projectStr  = fmt.Sprintf("projects/%v", projectID)
-	instanceStr = fmt.Sprintf("%v/instances/%v", projectStr, instanceID)
-	databaseStr = fmt.Sprintf("%v/databases/%v", instanceStr, databaseID)
-)
+func instanceStr(projectID, instanceID string) string {
+	return fmt.Sprintf("projects/%v/instances/%v", projectID, instanceID)
+}
 
-func setupDB(t *testing.T, ctx context.Context, opts ...option.ClientOption) {
-	t.Helper()
+func databaseStr(projectID, instanceID, databaseID string) string {
+	return fmt.Sprintf("projects/%v/instances/%v/databases/%v", projectID, instanceID, databaseID)
+}
 
-	t.Log("setup instance")
-	instanceClient, err := instance.NewInstanceAdminClient(ctx, opts...)
+func setupDatabase(ctx context.Context, spannerContainer *gcloud.GCloudContainer, instanceID, databaseID string, ddls []string, dmls []string) error {
+	projectID := spannerContainer.Settings.ProjectID
+	opts := defaultClientOptions(spannerContainer)
+
+	dbCli, err := database.NewDatabaseAdminClient(ctx, opts...)
 	if err != nil {
-		t.Fatal(err)
+		return err
+	}
+
+	createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
+		Parent:          instanceStr(projectID, instanceID),
+		CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
+		ExtraStatements: ddls,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = createDatabaseOp.Wait(ctx)
+	if err != nil {
+		return err
+	}
+
+	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	_, err = cli.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		_, err := tx.BatchUpdate(ctx, slices.Collect(xiter.Map(slices.Values(dmls), spanner.NewStatement)))
+		return err
+	})
+	return err
+}
+
+func setupInstance(ctx context.Context, spannerContainer *gcloud.GCloudContainer, instanceID string) error {
+	instanceClient, err := instance.NewInstanceAdminClient(ctx, defaultClientOptions(spannerContainer)...)
+	if err != nil {
+		return err
 	}
 	defer instanceClient.Close()
+
 	createInstance, err := instanceClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     projectStr,
+		Parent:     projectStr(spannerContainer.Settings.ProjectID),
 		InstanceId: instanceID,
 		Instance: &instancepb.Instance{
-			Name:            instanceStr,
+			Name:            instanceStr(spannerContainer.Settings.ProjectID, instanceID),
 			Config:          "regional-asia-northeast1",
 			DisplayName:     "fake",
 			ProcessingUnits: 100,
 		},
 	})
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
-	i, err := createInstance.Wait(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dumper := spew.ConfigState{}
-	t.Log("instance: ", dumper.Sdump(i))
-
-	t.Log("setup database")
-	{
-		dbCli, err := database.NewDatabaseAdminClient(ctx, opts...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
-			Parent:          instanceStr,
-			CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
-			ExtraStatements: gsqlsep.SeparateInputString(ddl),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		createDatabaseResp, err := createDatabaseOp.Wait(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Log("database: ", dumper.Sdump(createDatabaseResp))
-	}
-	t.Log("setup data")
-	{
-		cli, err := spanner.NewClient(ctx, databaseStr, opts...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cli.Close()
-
-		dmlStmts := slices.Collect(xiter.Map(slices.Values(gsqlsep.SeparateInputString(dml)), spanner.NewStatement))
-		_, err = cli.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-			_, err := tx.BatchUpdate(ctx, dmlStmts)
-			return err
-		})
-		if err != nil {
-			return
-		}
-	}
+	_, err = createInstance.Wait(ctx)
+	return err
 }
 
 func TestWithCloudSpannerEmulator(t *testing.T) {
+	const instanceID = "fake-instance"
+	const databaseID = "fake-database"
+
 	ctx := context.Background()
 	t.Log("start emulator")
 
-	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23", testcontainers.WithLogger(testcontainers.TestLogger(t)))
+	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
+		testcontainers.WithLogger(testcontainers.TestLogger(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	defer func() {
 		if err := spannerContainer.Terminate(ctx); err != nil {
 			t.Logf("failed to terminate container: %s", err)
 		}
 	}()
 
+	projectID := spannerContainer.Settings.ProjectID
+
 	t.Log("emulator started")
 
-	opts := []option.ClientOption{
-		option.WithEndpoint(spannerContainer.URI),
-		option.WithoutAuthentication(),
-		internaloption.SkipDialSettingsValidation(),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
+	opts := defaultClientOptions(spannerContainer)
 
-	setupDB(t, ctx, opts...)
+	err = setupInstance(ctx, spannerContainer, instanceID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	cli, err := spanner.NewClient(ctx, databaseStr, opts...)
+	err = setupDatabase(ctx, spannerContainer, instanceID, databaseID, gsqlsep.SeparateInputString(ddl), gsqlsep.SeparateInputString(dml))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +149,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 	defer cli.Close()
 
 	t.Run("PLAN with generateParams", func(t *testing.T) {
-		params, err := generateParams(map[string]string{
+		paramStrMap := map[string]string{
 			"i64":   "INT64",
 			"f32":   "FLOAT32",
 			"f64":   "FLOAT64",
@@ -159,21 +162,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			"a_str": `ARRAY<STRUCT<int64_value INT64>>`,
 			"a_s":   `ARRAY<STRING>`,
 			"j":     `JSON`,
-		}, true)
-		if err != nil {
-			t.Fatal(err)
 		}
-
-		rowIter := cli.Single().QueryWithOptions(ctx,
-			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @bl, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
-			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
-		defer rowIter.Stop()
-
-		err = skipRowIter(rowIter)
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		want := &sppb.StructType{
 			Fields: []*sppb.StructType_Field{
 				{Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
@@ -193,6 +182,22 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				{Type: &sppb.Type{Code: sppb.TypeCode_JSON}},
 			},
 		}
+
+		params, err := generateParams(paramStrMap, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		rowIter := cli.Single().QueryWithOptions(ctx,
+			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @bl, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
+			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
+		defer rowIter.Stop()
+
+		err = skipRowIter(rowIter)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		got := rowIter.Metadata.GetRowType()
 		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 			t.Error(diff)
@@ -338,6 +343,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 					t.Errorf("len(rows) must be 1, but: %v", lenRows)
 					return
 				}
+
 				row := rows[0]
 				if row.Size() != 1 {
 					t.Errorf("row.Size() must be 1, but: %v", row.Size())
@@ -358,4 +364,13 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 	})
 	require.NoError(t, err)
+}
+
+func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.ClientOption {
+	opts := []option.ClientOption{
+		option.WithEndpoint(spannerContainer.URI),
+		option.WithoutAuthentication(),
+		internaloption.SkipDialSettingsValidation(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
+	return opts
 }
