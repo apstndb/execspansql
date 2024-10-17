@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"google.golang.org/api/iterator"
 	"io"
+	"iter"
 	"regexp"
 	"slices"
 	"spheric.cloud/xiter"
@@ -173,12 +175,12 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
-			rs, err = consumeRowIter(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
+			rs, err = consumeRowIterIntoResultSet(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
 			return err
 		})
 		return rs, err
 	case single:
-		return consumeRowIter(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
+		return consumeRowIterIntoResultSet(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		return &sppb.ResultSet{
@@ -467,74 +469,87 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 	}
 }
 
-func consumeRowIter(rowIter *spanner.RowIterator, redactRows bool) (*sppb.ResultSet, error) {
-	consumeResult, err := consumeRowIterImpl(rowIter, redactRows)
+// consumeRowIterIntoResultSet construct *spannerpb.ResultSet using *spanner.RowIterator.
+// rowIter must be passed without calling any method, and it will be closed by this function.
+func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) (*sppb.ResultSet, error) {
+	defer rowIter.Stop()
+
+	var rows []*structpb.ListValue
+	var err error
+
+	if redactRows {
+		err = skipRowIter(rowIter)
+	} else {
+		rows, err = consumeRowIterIntoListValues(rowIter)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	rs, err := convertToResultSet(consumeResult)
-	if err != nil {
-		return nil, err
-	}
-	return rs, nil
+	return convertToResultSet(rows, rowIter)
 }
 
-func convertToResultSet(consumeResult *consumeRowIterResult) (*sppb.ResultSet, error) {
+// convertToResultSet convert rows and rowIter into sppb.ResultSet.
+// rowIter must be consumed with iterator.Done, and not Stop()-ed.
+func convertToResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*sppb.ResultSet, error) {
 	// Leave null if fields are not populated
 	rs := &sppb.ResultSet{
-		Rows:     consumeResult.Rows,
-		Metadata: consumeResult.Metadata,
+		Rows:     rows,
+		Metadata: rowIter.Metadata,
 	}
 
 	var queryStats *structpb.Struct
-	if consumeResult.QueryStats != nil {
-		qs, err := structpb.NewStruct(consumeResult.QueryStats)
+	if rowIter.QueryStats != nil {
+		qs, err := structpb.NewStruct(rowIter.QueryStats)
 		if err != nil {
 			return nil, err
 		}
 		queryStats = qs
 	}
 
-	if consumeResult.QueryPlan != nil || queryStats != nil || consumeResult.RowCount != 0 {
-		rs.Stats = &sppb.ResultSetStats{
-			QueryPlan:  consumeResult.QueryPlan,
-			QueryStats: queryStats,
-		}
-		if consumeResult.RowCount != 0 {
-			rs.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: consumeResult.RowCount}
-		}
+	// If there are no stats member, entire Stats must be nil
+	if rowIter.QueryPlan == nil && queryStats == nil && rowIter.RowCount == 0 {
+		return rs, nil
+	}
+
+	rs.Stats = &sppb.ResultSetStats{
+		QueryPlan:  rowIter.QueryPlan,
+		QueryStats: queryStats,
+	}
+	if rowIter.RowCount != 0 {
+		rs.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount}
 	}
 
 	return rs, nil
 }
 
-type consumeRowIterResult struct {
-	Metadata   *sppb.ResultSetMetadata
-	QueryPlan  *sppb.QueryPlan
-	QueryStats map[string]interface{}
-	RowCount   int64
-	Rows       []*structpb.ListValue
+func rowIterSeq(rowIter *spanner.RowIterator) iter.Seq2[*spanner.Row, error] {
+	return func(yield func(*spanner.Row, error) bool) {
+		for {
+			r, err := rowIter.Next()
+			if errors.Is(err, iterator.Done) {
+				return
+			}
+			if err != nil {
+				_ = yield(nil, err)
+				return
+			}
+			if !yield(r, nil) {
+				return
+			}
+		}
+	}
 }
 
-func consumeRowIterImpl(rowIter *spanner.RowIterator, redactRows bool) (*consumeRowIterResult, error) {
-	var rows []*structpb.ListValue
-	err := rowIter.Do(func(r *spanner.Row) error {
-		if redactRows {
-			return nil
-		}
+func rowToListValue(r *spanner.Row) *structpb.ListValue {
+	return &structpb.ListValue{Values: slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))}
+}
 
-		rows = append(rows, &structpb.ListValue{Values: rowValues(r)})
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &consumeRowIterResult{
-		Rows:       rows,
-		QueryPlan:  rowIter.QueryPlan,
-		QueryStats: rowIter.QueryStats,
-		RowCount:   rowIter.RowCount,
-		Metadata:   rowIter.Metadata,
-	}, nil
+func consumeRowIterIntoListValues(rowIter *spanner.RowIterator) ([]*structpb.ListValue, error) {
+	return xiter.TryCollect(mapNonError(rowIterSeq(rowIter), rowToListValue))
+}
+
+func skipRowIter(rowIter *spanner.RowIterator) error {
+	return rowIter.Do(func(r *spanner.Row) error { return nil })
 }

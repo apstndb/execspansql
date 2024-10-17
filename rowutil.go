@@ -12,10 +12,6 @@ import (
 	"spheric.cloud/xiter"
 )
 
-func rowValues(r *spanner.Row) []*structpb.Value {
-	return slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))
-}
-
 const nullString = "<null>"
 
 type spannerNullableValue interface {
