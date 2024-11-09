@@ -670,8 +670,8 @@ github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a h1:9rutREITQVQSkSt
 github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a/go.mod h1:NQogaK8AOkyzXEXMqGvc6hV0SKO8cUkcqqXJimyvTlw=
 github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c h1:qY6RWLulQDcbGy18LT36m2IweZ5VI5tdwMuhtBwZGvI=
 github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c/go.mod h1:PbqzTjsPq7Xhn8D7Vk8g/em15kd8vvEL1Y2xkI9CgGs=
-github.com/apstndb/memebridge v0.0.0-20241108222546-56934312de86 h1:/P7mXm3wiZBt/KCxKSUBDb/EkO0vwkHTeG5EtSVzFhM=
-github.com/apstndb/memebridge v0.0.0-20241108222546-56934312de86/go.mod h1:FQUt3hvUEVvUYy2YmQGrgLuzENXlKD86h+Xo63jLWi8=
+github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5 h1:g/oT7Ma+julpql02U7TMNluxtKOZMnxyaZwqiTguwD4=
+github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5/go.mod h1:FaufbBYU/dQaQChu/b62igLoLJmT2Qj8lPEdbxRls2c=
 github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb h1:wop6M8ZQWhVLYtiBKXvkNd6TFUSpiGya86Az57KiTl0=
 github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb/go.mod h1:H9relGptAtWqSNrJy+V1jiYPeBIk8KYh6lACV3VZrqU=
 github.com/apstndb/spantype v0.2.0 h1:yoV0riMXhLeT9z8D1zhvwIraOvIU0fDKwWrWgtmoNns=

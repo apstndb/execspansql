@@ -7,7 +7,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.24.0
 	github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4
 	github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a
-	github.com/apstndb/memebridge v0.0.0-20241108222546-56934312de86
+	github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5
 	github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7

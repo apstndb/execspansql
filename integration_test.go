@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/apstndb/execspansql/params"
+
 	"cloud.google.com/go/spanner"
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -183,7 +185,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			},
 		}
 
-		params, err := generateParams(paramStrMap, true)
+		params, err := params.GenerateParams(paramStrMap, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -358,7 +360,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			},
 		} {
 			t.Run(tcase.desc, func(t *testing.T) {
-				params, err := generateParams(map[string]string{"v": tcase.input}, false)
+				params, err := params.GenerateParams(map[string]string{"v": tcase.input}, false)
 				if err != nil {
 					t.Fatal(err)
 				}

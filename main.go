@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"github.com/apstndb/execspansql/internal"
+	"github.com/apstndb/execspansql/params"
 	"google.golang.org/api/iterator"
 	"io"
 	"iter"
@@ -281,7 +283,7 @@ func _main() error {
 	}
 	defer client.Close()
 
-	paramMap, err := generateParams(o.Param, mode == sppb.ExecuteSqlRequest_PLAN)
+	paramMap, err := params.GenerateParams(o.Param, mode == sppb.ExecuteSqlRequest_PLAN)
 	if err != nil {
 		return err
 	}
@@ -357,7 +359,7 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
 		return slices.Collect(
 			xiter.Map(
 				xiter.Zip(slices.Values(types), slices.Values(row.Values)),
-				tupled(must2(typeValueToStringExperimental)),
+				internal.Tupled(internal.Must2(typeValueToStringExperimental)),
 			),
 		)
 	}))
@@ -547,7 +549,7 @@ func rowToListValue(r *spanner.Row) *structpb.ListValue {
 }
 
 func consumeRowIterIntoListValues(rowIter *spanner.RowIterator) ([]*structpb.ListValue, error) {
-	return xiter.TryCollect(mapNonError(rowIterSeq(rowIter), rowToListValue))
+	return xiter.TryCollect(internal.MapNonError(rowIterSeq(rowIter), rowToListValue))
 }
 
 func skipRowIter(rowIter *spanner.RowIterator) error {

@@ -1,4 +1,4 @@
-package main
+package params
 
 import (
 	"encoding/base64"
@@ -192,7 +192,7 @@ func TestGenerateParams(t *testing.T) {
 	}
 	for _, tt := range tcases {
 		t.Run(tt.Name, func(t *testing.T) {
-			params, err := generateParams(tt.Input, tt.PermitType)
+			params, err := GenerateParams(tt.Input, tt.PermitType)
 			if !tt.ExpectErr && err != nil {
 				t.Fatalf("error is not expected: %v", err)
 			}
