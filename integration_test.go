@@ -304,6 +304,40 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				},
 			},
 			{
+				"ARRAY<STRUCT<int64_value INT64>> typeless",
+				`[STRUCT(1 AS int64_value)]`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{
+						Fields: []*sppb.StructType_Field{{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}}}},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{
+						Values: []*structpb.Value{
+							structpb.NewListValue(&structpb.ListValue{
+								Values: []*structpb.Value{
+									structpb.NewStringValue("1")}})}}),
+				},
+			},
+			{
+				"ARRAY<STRUCT<INT64, STRING>> tuple",
+				`[(1, "foo")]`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{
+						Fields: []*sppb.StructType_Field{
+							{Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+							{Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						}}},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{
+						Values: []*structpb.Value{
+							structpb.NewListValue(&structpb.ListValue{
+								Values: []*structpb.Value{
+									structpb.NewStringValue("1"),
+									structpb.NewStringValue("foo"),
+								},
+							})}}),
+				},
+			},
+			{
 				"ARRAY<STRING>",
 				`['foo']`,
 				spanner.GenericColumnValue{

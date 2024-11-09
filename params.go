@@ -3,6 +3,7 @@ package main
 import (
 	"cloud.google.com/go/spanner"
 	"fmt"
+	"github.com/cloudspannerecosystem/memefish"
 )
 
 // generateParams returns map for spanner.Statement.Params.
@@ -20,7 +21,7 @@ func generateParams(ss map[string]string, permitType bool) (map[string]interface
 
 func generateParam(code string, permitType bool) (*spanner.GenericColumnValue, error) {
 	if permitType {
-		typ, err := parseType(code)
+		typ, err := memefish.ParseType("", code)
 		if err == nil {
 			debuglog.Println("ast.Type.SQL():", typ.SQL())
 			value, err := astTypeToGenericColumnValue(typ)
@@ -33,7 +34,7 @@ func generateParam(code string, permitType bool) (*spanner.GenericColumnValue, e
 		debuglog.Println("ignore parse error:", err)
 	}
 
-	expr, err := parseExpr(code)
+	expr, err := memefish.ParseExpr("", code)
 	if err != nil {
 		return nil, fmt.Errorf("error on parsing expr: %w", err)
 	}

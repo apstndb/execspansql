@@ -4,7 +4,6 @@ import (
 	"github.com/samber/lo"
 	"iter"
 	"spheric.cloud/xiter"
-	"strings"
 )
 
 func must2[T1, T2, R any](f func(T1, T2) (R, error)) func(T1, T2) R {
@@ -23,23 +22,6 @@ func tupledWithErr[T1, T2, R any](f func(T1, T2) (R, error)) func(xiter.Zipped[T
 	return func(z xiter.Zipped[T1, T2]) (R, error) {
 		return f(z.V1, z.V2)
 	}
-}
-
-func tryJoin(delegate iter.Seq2[string, error], sep string) (string, error) {
-	first := true
-	var b strings.Builder
-	for s, err := range delegate {
-		if err != nil {
-			return b.String(), err
-		}
-		if !first {
-			b.WriteString(sep)
-		} else {
-			first = false
-		}
-		b.WriteString(s)
-	}
-	return b.String(), nil
 }
 
 func tryMapMap[K comparable, T, R any](m map[K]T, f func(K, T) (R, error)) (map[K]R, error) {
