@@ -42,15 +42,13 @@ func mapNonError[T, R any](delegate iter.Seq2[T, error], f func(T) R) iter.Seq2[
 	return func(yield func(R, error) bool) {
 		for v, err := range delegate {
 			if err != nil {
-				ok := yield(lo.Empty[R](), err)
-				if !ok {
+				if !yield(lo.Empty[R](), err) {
 					return
 				}
-				continue
-			}
-			ok := yield(f(v), err)
-			if !ok {
-				return
+			} else {
+				if !yield(f(v), nil) {
+					return
+				}
 			}
 		}
 	}
