@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/apstndb/execspansql/params"
+
 	"cloud.google.com/go/spanner"
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
@@ -68,7 +70,7 @@ func setupDatabase(ctx context.Context, spannerContainer *gcloud.GCloudContainer
 		return err
 	}
 
-	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
+	cli, err := spanner.NewClientWithConfig(ctx, databaseStr(projectID, instanceID, databaseID), spanner.ClientConfig{DisableNativeMetrics: true}, opts...)
 	if err != nil {
 		return err
 	}
@@ -183,7 +185,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			},
 		}
 
-		params, err := generateParams(paramStrMap, true)
+		params, err := params.GenerateParams(paramStrMap, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -304,6 +306,40 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				},
 			},
 			{
+				"ARRAY<STRUCT<int64_value INT64>> typeless",
+				`[STRUCT(1 AS int64_value)]`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{
+						Fields: []*sppb.StructType_Field{{Name: "int64_value", Type: &sppb.Type{Code: sppb.TypeCode_INT64}}}}},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{
+						Values: []*structpb.Value{
+							structpb.NewListValue(&structpb.ListValue{
+								Values: []*structpb.Value{
+									structpb.NewStringValue("1")}})}}),
+				},
+			},
+			{
+				"ARRAY<STRUCT<INT64, STRING>> tuple",
+				`[(1, "foo")]`,
+				spanner.GenericColumnValue{
+					Type: &sppb.Type{Code: sppb.TypeCode_ARRAY, ArrayElementType: &sppb.Type{Code: sppb.TypeCode_STRUCT, StructType: &sppb.StructType{
+						Fields: []*sppb.StructType_Field{
+							{Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+							{Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+						}}},
+					},
+					Value: structpb.NewListValue(&structpb.ListValue{
+						Values: []*structpb.Value{
+							structpb.NewListValue(&structpb.ListValue{
+								Values: []*structpb.Value{
+									structpb.NewStringValue("1"),
+									structpb.NewStringValue("foo"),
+								},
+							})}}),
+				},
+			},
+			{
 				"ARRAY<STRING>",
 				`['foo']`,
 				spanner.GenericColumnValue{
@@ -324,7 +360,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			},
 		} {
 			t.Run(tcase.desc, func(t *testing.T) {
-				params, err := generateParams(map[string]string{"v": tcase.input}, false)
+				params, err := params.GenerateParams(map[string]string{"v": tcase.input}, false)
 				if err != nil {
 					t.Fatal(err)
 				}
