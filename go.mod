@@ -3,7 +3,7 @@ module github.com/apstndb/execspansql
 go 1.23.2
 
 require (
-	cloud.google.com/go/spanner v1.72.0
+	cloud.google.com/go/spanner v1.73.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.24.0
 	github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4
 	github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a

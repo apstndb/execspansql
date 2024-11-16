@@ -61,6 +61,8 @@ func init() {
 	} else {
 		debuglog = log.New(io.Discard, "", log.LstdFlags)
 	}
+	// suppress
+	_ = debuglog
 }
 
 type opts struct {

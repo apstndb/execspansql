@@ -70,7 +70,7 @@ func setupDatabase(ctx context.Context, spannerContainer *gcloud.GCloudContainer
 		return err
 	}
 
-	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
+	cli, err := spanner.NewClientWithConfig(ctx, databaseStr(projectID, instanceID, databaseID), spanner.ClientConfig{DisableNativeMetrics: true}, opts...)
 	if err != nil {
 		return err
 	}
