@@ -3,30 +3,18 @@ package main
 import (
 	"context"
 	_ "embed"
-	"fmt"
-	"slices"
 	"testing"
 
-	"github.com/apstndb/execspansql/params"
-
 	"cloud.google.com/go/spanner"
-	database "cloud.google.com/go/spanner/admin/database/apiv1"
-	"cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
-	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
-	"cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlsep"
+	"github.com/apstndb/spanemuboost"
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/gcloud"
-	"google.golang.org/api/option"
-	"google.golang.org/api/option/internaloption"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
 	"spheric.cloud/xiter"
+
+	"github.com/apstndb/execspansql/params"
 )
 
 //go:embed testdata/ddl.sql
@@ -35,120 +23,19 @@ var ddl string
 //go:embed testdata/dml.sql
 var dml string
 
-func projectStr(projectID string) string {
-	return fmt.Sprintf("projects/%v", projectID)
-}
-
-func instanceStr(projectID, instanceID string) string {
-	return fmt.Sprintf("projects/%v/instances/%v", projectID, instanceID)
-}
-
-func databaseStr(projectID, instanceID, databaseID string) string {
-	return fmt.Sprintf("projects/%v/instances/%v/databases/%v", projectID, instanceID, databaseID)
-}
-
-func setupDatabase(ctx context.Context, spannerContainer *gcloud.GCloudContainer, instanceID, databaseID string, ddls []string, dmls []string) error {
-	projectID := spannerContainer.Settings.ProjectID
-	opts := defaultClientOptions(spannerContainer)
-
-	dbCli, err := database.NewDatabaseAdminClient(ctx, opts...)
-	if err != nil {
-		return err
-	}
-
-	createDatabaseOp, err := dbCli.CreateDatabase(ctx, &databasepb.CreateDatabaseRequest{
-		Parent:          instanceStr(projectID, instanceID),
-		CreateStatement: fmt.Sprintf("CREATE DATABASE `%v`", databaseID),
-		ExtraStatements: ddls,
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = createDatabaseOp.Wait(ctx)
-	if err != nil {
-		return err
-	}
-
-	cli, err := spanner.NewClientWithConfig(ctx, databaseStr(projectID, instanceID, databaseID), spanner.ClientConfig{DisableNativeMetrics: true}, opts...)
-	if err != nil {
-		return err
-	}
-	defer cli.Close()
-
-	_, err = cli.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-		_, err := tx.BatchUpdate(ctx, slices.Collect(xiter.Map(slices.Values(dmls), spanner.NewStatement)))
-		return err
-	})
-	return err
-}
-
-func setupInstance(ctx context.Context, spannerContainer *gcloud.GCloudContainer, instanceID string) error {
-	instanceClient, err := instance.NewInstanceAdminClient(ctx, defaultClientOptions(spannerContainer)...)
-	if err != nil {
-		return err
-	}
-	defer instanceClient.Close()
-
-	createInstance, err := instanceClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     projectStr(spannerContainer.Settings.ProjectID),
-		InstanceId: instanceID,
-		Instance: &instancepb.Instance{
-			Name:            instanceStr(spannerContainer.Settings.ProjectID, instanceID),
-			Config:          "regional-asia-northeast1",
-			DisplayName:     "fake",
-			ProcessingUnits: 100,
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = createInstance.Wait(ctx)
-	return err
-}
-
 func TestWithCloudSpannerEmulator(t *testing.T) {
-	const instanceID = "fake-instance"
-	const databaseID = "fake-database"
-
 	ctx := context.Background()
-	t.Log("start emulator")
 
-	spannerContainer, err := gcloud.RunSpanner(ctx, "gcr.io/cloud-spanner-emulator/emulator:1.5.23",
-		testcontainers.WithLogger(testcontainers.TestLogger(t)))
+	_, clients, teardown, err := spanemuboost.NewEmulatorWithClients(ctx,
+		spanemuboost.WithSetupDDLs(gsqlsep.SeparateInputString(ddl)),
+		spanemuboost.WithSetupRawDMLs(gsqlsep.SeparateInputString(dml)),
+	)
 	if err != nil {
-		t.Fatal(err)
+		return
 	}
+	defer teardown()
 
-	defer func() {
-		if err := spannerContainer.Terminate(ctx); err != nil {
-			t.Logf("failed to terminate container: %s", err)
-		}
-	}()
-
-	projectID := spannerContainer.Settings.ProjectID
-
-	t.Log("emulator started")
-
-	opts := defaultClientOptions(spannerContainer)
-
-	err = setupInstance(ctx, spannerContainer, instanceID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = setupDatabase(ctx, spannerContainer, instanceID, databaseID, gsqlsep.SeparateInputString(ddl), gsqlsep.SeparateInputString(dml))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cli, err := spanner.NewClient(ctx, databaseStr(projectID, instanceID, databaseID), opts...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer cli.Close()
+	client := clients.Client
 
 	t.Run("PLAN with generateParams", func(t *testing.T) {
 		paramStrMap := map[string]string{
@@ -190,7 +77,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		rowIter := cli.Single().QueryWithOptions(ctx,
+		rowIter := clients.Client.Single().QueryWithOptions(ctx,
 			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @bl, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
 		defer rowIter.Stop()
@@ -364,7 +251,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				rowIter := cli.Single().QueryWithOptions(ctx,
+				rowIter := client.Single().QueryWithOptions(ctx,
 					spanner.Statement{SQL: "SELECT @v AS v", Params: params},
 					spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_NORMAL.Enum()})
 				defer rowIter.Stop()
@@ -399,14 +286,4 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			})
 		}
 	})
-	require.NoError(t, err)
-}
-
-func defaultClientOptions(spannerContainer *gcloud.GCloudContainer) []option.ClientOption {
-	opts := []option.ClientOption{
-		option.WithEndpoint(spannerContainer.URI),
-		option.WithoutAuthentication(),
-		internaloption.SkipDialSettingsValidation(),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))}
-	return opts
 }
