@@ -310,26 +310,7 @@ func _main() error {
 
 func processResults(ctx context.Context, rs *sppb.ResultSet, o opts, w io.Writer) error {
 	if o.Format == "experimental_csv" {
-		csvWriter := csv.NewWriter(w)
-		fields := rs.GetMetadata().GetRowType().GetFields()
-		header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
-		if err := csvWriter.Write(header); err != nil {
-			return err
-		}
-		types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
-		records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
-			return slices.Collect(
-				xiter.Map(
-					xiter.Zip(slices.Values(types), slices.Values(row.Values)),
-					internal.Tupled(internal.Must2(typeValueToStringExperimental)),
-				),
-			)
-		}))
-		if err := csvWriter.WriteAll(records); err != nil {
-			return err
-		}
-		csvWriter.Flush()
-		return csvWriter.Error()
+		return writeCsvResults(rs, w)
 	}
 
 	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
@@ -368,6 +349,29 @@ func processResults(ctx context.Context, rs *sppb.ResultSet, o opts, w io.Writer
 	}
 
 	return p.Execute(ctx, rs, executeOptions...)
+}
+
+func writeCsvResults(rs *sppb.ResultSet, w io.Writer) error {
+	csvWriter := csv.NewWriter(w)
+	fields := rs.GetMetadata().GetRowType().GetFields()
+	header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
+	if err := csvWriter.Write(header); err != nil {
+		return err
+	}
+	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
+	records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
+		return slices.Collect(
+			xiter.Map(
+				xiter.Zip(slices.Values(types), slices.Values(row.Values)),
+				internal.Tupled(internal.Must2(typeValueToStringExperimental)),
+			),
+		)
+	}))
+	if err := csvWriter.WriteAll(records); err != nil {
+		return err
+	}
+	csvWriter.Flush()
+	return csvWriter.Error()
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {

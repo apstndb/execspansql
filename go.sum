@@ -664,12 +664,6 @@ github.com/apache/arrow/go/v11 v11.0.0/go.mod h1:Eg5OsL5H+e299f7u5ssuXsuHQVEGC4x
 github.com/apache/arrow/go/v15 v15.0.2 h1:60IliRbiyTWCWjERBCkO1W4Qun9svcYoZrSLcyOsMLE=
 github.com/apache/arrow/go/v15 v15.0.2/go.mod h1:DGXsR3ajT524njufqf95822i+KTh+yea1jass9YXgjA=
 github.com/apache/thrift v0.16.0/go.mod h1:PHK3hniurgQaNMZYaCLEqXKsYK8upmhPbmdP2FXSqgU=
-github.com/apstndb/go-jq-yamlformat v0.0.0-20250624151032-506b5dc3e936 h1:fHt+6v9pz57ug6je43lhYDPpG+A52ruJF3q/TeLRh80=
-github.com/apstndb/go-jq-yamlformat v0.0.0-20250624151032-506b5dc3e936/go.mod h1:PMiqknSt38DmgsNHqpydbrqyMwIHcfFxBBeGODzIt9A=
-github.com/apstndb/go-jq-yamlformat v0.0.0-20250625184140-74a099b4874d h1:O0Lf+jiOQZgQ9QerXR97ubKv9M2dtYoIpc+KnDYtz94=
-github.com/apstndb/go-jq-yamlformat v0.0.0-20250625184140-74a099b4874d/go.mod h1:PMiqknSt38DmgsNHqpydbrqyMwIHcfFxBBeGODzIt9A=
-github.com/apstndb/go-jq-yamlformat v0.0.0-20250625194920-a91d2d6252dd h1:DnGz5g5qNrOlZSGXJf3oInVeuSE4MJjhcWAyqcLkQvg=
-github.com/apstndb/go-jq-yamlformat v0.0.0-20250625194920-a91d2d6252dd/go.mod h1:klldr+wegB1KZME56IMyXEbpWdlnpstoHwJLXiHs6o8=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250625202743-908a53b30240 h1:gdnXd8HxYVSxnEFbuoH5LkdKOP0mJ0h+L5GkoLrFts0=
 github.com/apstndb/go-jq-yamlformat v0.0.0-20250625202743-908a53b30240/go.mod h1:klldr+wegB1KZME56IMyXEbpWdlnpstoHwJLXiHs6o8=
 github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4 h1:WfWmn7N+kNxe5YYh1Uoy/FG2CzPpuxCkYQPovjxrDSk=
@@ -1097,8 +1091,6 @@ go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 h1:TT4fX+n
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0/go.mod h1:L7UH0GbB0p47T4Rri3uHjbpCFYrVrwc1I25QhNPiGK8=
 go.opentelemetry.io/otel v1.29.0 h1:PdomN/Al4q/lN6iBJEN3AwPvUiHPMlt93c8bqTG5Llw=
 go.opentelemetry.io/otel v1.29.0/go.mod h1:N/WtXPs1CNCUEx+Agz5uouwCba+i+bJGFicT8SR4NP8=
-go.opentelemetry.io/otel/bridge/opencensus v1.27.0 h1:ao9aGGHd+G4YfjBpGs6vbkvt5hoC67STlJA9fCnOAcs=
-go.opentelemetry.io/otel/bridge/opencensus v1.27.0/go.mod h1:uRvWtAAXzyVOST0WMPX5JHGBaAvBws+2F8PcC5gMnTk=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.19.0 h1:Mne5On7VWdx7omSrSSZvM4Kw7cS7NQkOOmLcgscI51U=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.19.0/go.mod h1:IPtUMKL4O3tH5y+iXVyAXqpAwMuzC1IrxVS81rummfE=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.19.0 h1:IeMeyr1aBvBiPVYihXIaeIZba6b8E1bYp7lbdxK8CQg=
@@ -1779,8 +1771,6 @@ google.golang.org/protobuf v1.28.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqw
 google.golang.org/protobuf v1.28.1/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
 google.golang.org/protobuf v1.29.1/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
 google.golang.org/protobuf v1.30.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
-google.golang.org/protobuf v1.35.2 h1:8Ar7bF+apOIoThw1EdZl0p1oWvMqTHmpA2fRTyZO8io=
-google.golang.org/protobuf v1.35.2/go.mod h1:9fA7Ob0pmnwhb644+1+CVWFRbNajQ6iRojtC/QF5bRE=
 google.golang.org/protobuf v1.36.6 h1:z1NpPI8ku2WgiWnf+t9wTPsn6eP1L7ksHUlkfLvd9xY=
 google.golang.org/protobuf v1.36.6/go.mod h1:jduwjTPXsFjZGTmRluh+L6NjiWu7pchiJ2/5YcXBHnY=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=

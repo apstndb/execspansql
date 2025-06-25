@@ -17,8 +17,8 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/samber/lo v1.47.0
+	github.com/stretchr/testify v1.9.0
 	go.opentelemetry.io/otel v1.29.0
-	go.opentelemetry.io/otel/bridge/opencensus v1.27.0
 	go.opentelemetry.io/otel/sdk v1.29.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/api v0.211.0
@@ -95,7 +95,6 @@ require (
 	github.com/shirou/gopsutil/v3 v3.23.12 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/testcontainers/testcontainers-go v0.34.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.34.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
