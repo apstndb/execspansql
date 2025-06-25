@@ -1,48 +1,35 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/csv"
 	"errors"
-	"github.com/apstndb/execspansql/internal"
-	"github.com/apstndb/execspansql/params"
-	"google.golang.org/api/iterator"
-	"io"
-	"iter"
-	"regexp"
-	"slices"
-	"spheric.cloud/xiter"
-	"time"
-
 	"fmt"
+	"io"
 	"log"
 	"os"
-
-	"encoding/json"
-	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
-	oteloc "go.opentelemetry.io/otel/bridge/opencensus"
-
-	"go.opentelemetry.io/otel"
-
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
-	"google.golang.org/protobuf/proto"
-	"gopkg.in/yaml.v3"
-
-	"google.golang.org/api/option"
-	"google.golang.org/grpc"
-
-	grpczap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
-	"go.uber.org/zap"
+	"regexp"
+	"slices"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"github.com/apstndb/execspansql/internal"
+	"github.com/apstndb/execspansql/params"
+	"github.com/apstndb/go-jq-yamlformat"
 	"github.com/apstndb/spannerotel/interceptor"
-	"github.com/itchyny/gojq"
+	grpczap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"github.com/jessevdk/go-flags"
-	"google.golang.org/protobuf/encoding/protojson"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/zap"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
+	"iter"
+	"spheric.cloud/xiter"
 )
 
 func main() {
@@ -230,22 +217,6 @@ func _main() error {
 	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	defer cancel()
 
-	// Use jqQuery even if empty filter
-	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
-	if err != nil {
-		return err
-	}
-
-	// Overwrite to "." because gojq don't support empty query
-	if jqFilter == "" {
-		jqFilter = "."
-	}
-
-	jqQuery, err := gojq.Parse(jqFilter)
-	if err != nil {
-		return err
-	}
-
 	mode := sppb.ExecuteSqlRequest_QueryMode(sppb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
 
 	query, err := readFileOrDefault(o.SqlFile, o.Sql)
@@ -261,7 +232,6 @@ func _main() error {
 		}
 
 		otel.SetTracerProvider(tp)
-		oteloc.InstallTraceBridge()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -335,28 +305,60 @@ func _main() error {
 		return err
 	}
 
-	if o.Format == "experimental_csv" {
-		return writeCsv(os.Stdout, rs)
-	}
-
-	object, err := toProtojsonObject(rs)
-	if err != nil {
-		return err
-	}
-
-	enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
-	if err != nil {
-		return err
-	}
-
-	return printResult(enc, jqQuery.Run(object))
+	return processResults(ctx, rs, o, os.Stdout)
 }
 
-func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
+func processResults(ctx context.Context, rs *sppb.ResultSet, o opts, w io.Writer) error {
+	if o.Format == "experimental_csv" {
+		return writeCsvResults(rs, w)
+	}
+
+	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
+	if err != nil {
+		return err
+	}
+	if jqFilter == "" {
+		jqFilter = "."
+	}
+
+	p, err := jqyaml.New(
+		jqyaml.WithQuery(jqFilter),
+		jqyaml.WithProtojsonInput(),
+	)
+	if err != nil {
+		return err
+	}
+
+	var executeOptions []jqyaml.ExecuteOption
+	switch o.Format {
+	case "yaml":
+		executeOptions = append(executeOptions, jqyaml.WithWriter(w, jqyaml.FormatYAML))
+	case "json":
+		executeOptions = append(executeOptions, jqyaml.WithWriter(w, jqyaml.FormatJSON))
+		if o.JqRawOutput {
+			executeOptions = append(executeOptions, jqyaml.WithRawJSONOutput())
+		} else {
+			if o.CompactOutput {
+				executeOptions = append(executeOptions, jqyaml.WithCompactJSONOutput())
+			} else {
+				executeOptions = append(executeOptions, jqyaml.WithPrettyJSONOutput())
+			}
+		}
+	default:
+		return fmt.Errorf("unknown format: %s", o.Format)
+	}
+
+	return p.Execute(ctx, rs, executeOptions...)
+}
+
+func writeCsvResults(rs *sppb.ResultSet, w io.Writer) error {
+	csvWriter := csv.NewWriter(w)
 	fields := rs.GetMetadata().GetRowType().GetFields()
-
+	header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
+	if err := csvWriter.Write(header); err != nil {
+		return err
+	}
 	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
-
 	records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
 		return slices.Collect(
 			xiter.Map(
@@ -365,22 +367,11 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
 			),
 		)
 	}))
-
-	csvWriter := csv.NewWriter(writer)
-	defer csvWriter.Flush()
-
-	header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
-
-	err := csvWriter.Write(header)
-	if err != nil {
+	if err := csvWriter.WriteAll(records); err != nil {
 		return err
 	}
-
-	err = csvWriter.WriteAll(records)
-	if err != nil {
-		return err
-	}
-	return nil
+	csvWriter.Flush()
+	return csvWriter.Error()
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
@@ -402,75 +393,6 @@ func newClient(ctx context.Context, project, instance, database string, logGrpc 
 			TrackSessionHandles: true,
 		},
 	}, copts...)
-}
-
-func toProtojsonObject(m proto.Message) (map[string]interface{}, error) {
-	b, err := protojson.Marshal(m)
-	if err != nil {
-		return nil, err
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
-
-	var object map[string]interface{}
-	err = dec.Decode(&object)
-	if err != nil {
-		return nil, err
-	}
-	return object, nil
-}
-
-type encoder interface{ Encode(v interface{}) error }
-
-type stringPassThroughEncoderWrapper struct {
-	Writer io.Writer
-	Enc    encoder
-}
-
-func (enc *stringPassThroughEncoderWrapper) Encode(v interface{}) error {
-	if s, ok := v.(string); ok {
-		_, err := fmt.Fprintln(enc.Writer, s)
-		return err
-	}
-	return enc.Enc.Encode(v)
-}
-
-func printResult(enc encoder, iter gojq.Iter) error {
-	for {
-		v, ok := iter.Next()
-		if !ok {
-			break
-		}
-		if err, ok := v.(error); ok {
-			return err
-		}
-		err := enc.Encode(v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {
-	switch {
-	case format == "yaml":
-		return yaml.NewEncoder(writer), nil
-	case format == "json":
-		jsonenc := json.NewEncoder(writer)
-		jsonenc.SetEscapeHTML(false)
-		if !compactOutput {
-			jsonenc.SetIndent("", "  ")
-		}
-		if rawOutput {
-			return &stringPassThroughEncoderWrapper{Writer: writer, Enc: jsonenc}, nil
-		} else {
-			return jsonenc, nil
-		}
-	default:
-		return nil, fmt.Errorf("unknown format: %s", format)
-	}
 }
 
 // consumeRowIterIntoResultSet construct *spannerpb.ResultSet using *spanner.RowIterator.
