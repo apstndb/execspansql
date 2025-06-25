@@ -5,28 +5,25 @@ go 1.23.2
 require (
 	cloud.google.com/go/spanner v1.73.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.24.0
+	github.com/apstndb/go-jq-yamlformat v0.0.0-20250625202743-908a53b30240
 	github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4
 	github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a
 	github.com/apstndb/memebridge v0.0.0-20241109035413-f2364d33ecb5
+	github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10
 	github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb
 	github.com/apstndb/spanvalue v0.0.0-20241103175520-dc3408b8d84e
 	github.com/cloudspannerecosystem/memefish v0.0.0-20241106111047-2b2b4b23a1e7
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
-	github.com/itchyny/gojq v0.12.16
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/samber/lo v1.47.0
-	github.com/stretchr/testify v1.9.0
-	github.com/testcontainers/testcontainers-go v0.34.0
-	github.com/testcontainers/testcontainers-go/modules/gcloud v0.34.0
 	go.opentelemetry.io/otel v1.29.0
 	go.opentelemetry.io/otel/bridge/opencensus v1.27.0
 	go.opentelemetry.io/otel/sdk v1.29.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/api v0.211.0
 	google.golang.org/grpc v1.68.1
-	google.golang.org/protobuf v1.35.2
-	gopkg.in/yaml.v3 v3.0.1
+	google.golang.org/protobuf v1.36.6
 	spheric.cloud/xiter v0.0.0-20240904151420-c999f37a46b2
 )
 
@@ -46,9 +43,8 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.24.1 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.48.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/apache/arrow/go/v15 v15.0.2 // indirect
+	github.com/apstndb/go-yamlformat v0.0.0-20250624144133-5961930dd0ba // indirect
 	github.com/apstndb/lox v0.0.0-20241102092239-40172f618f5c // indirect
-	github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10 // indirect
 	github.com/apstndb/spantype v0.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
@@ -69,6 +65,7 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -76,6 +73,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.0 // indirect
+	github.com/itchyny/gojq v0.12.16 // indirect
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
@@ -97,6 +95,9 @@ require (
 	github.com/shirou/gopsutil/v3 v3.23.12 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
+	github.com/testcontainers/testcontainers-go v0.34.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/gcloud v0.34.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
@@ -119,4 +120,5 @@ require (
 	google.golang.org/genproto v0.0.0-20241015192408-796eee8c2d53 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241118233622-e639e219e697 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241206012308-a4fef0638583 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
