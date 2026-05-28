@@ -9,6 +9,32 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func TestWriteCsvInvalidMetadata(t *testing.T) {
+	if err := writeCsv(&bytes.Buffer{}, nil); err == nil {
+		t.Fatal("writeCsv(nil) expected error")
+	}
+}
+
+func TestWriteCsvRowValueMismatch(t *testing.T) {
+	rs := &sppb.ResultSet{
+		Metadata: &sppb.ResultSetMetadata{
+			RowType: &sppb.StructType{
+				Fields: []*sppb.StructType_Field{
+					{Name: "id", Type: &sppb.Type{Code: sppb.TypeCode_INT64}},
+					{Name: "name", Type: &sppb.Type{Code: sppb.TypeCode_STRING}},
+				},
+			},
+		},
+		Rows: []*structpb.ListValue{
+			{Values: []*structpb.Value{structpb.NewStringValue("1")}},
+		},
+	}
+	err := writeCsv(&bytes.Buffer{}, rs)
+	if err == nil {
+		t.Fatal("writeCsv() expected row count mismatch error")
+	}
+}
+
 func TestWriteCsv(t *testing.T) {
 	rs := &sppb.ResultSet{
 		Metadata: &sppb.ResultSetMetadata{

@@ -353,20 +353,39 @@ func _main() error {
 }
 
 func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
+	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
+		return errors.New("result set metadata is missing or invalid")
+	}
+
 	csvWriter := svwriter.NewCSVWriter(writer, rs.GetMetadata())
 	fields := rs.GetMetadata().GetRowType().GetFields()
 	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
+
+	var writeErr error
+	defer func() {
+		if err := csvWriter.Flush(); err != nil && writeErr == nil {
+			writeErr = err
+		}
+	}()
+
 	for _, row := range rs.GetRows() {
+		if row == nil {
+			return fmt.Errorf("nil row in result set")
+		}
 		values := row.GetValues()
+		if len(values) != len(types) {
+			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(types))
+		}
 		gcvs := make([]spanner.GenericColumnValue, len(types))
 		for i, typ := range types {
 			gcvs[i] = spanner.GenericColumnValue{Type: typ, Value: values[i]}
 		}
 		if err := csvWriter.WriteGCVs(gcvs); err != nil {
+			writeErr = err
 			return err
 		}
 	}
-	return csvWriter.Flush()
+	return writeErr
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
