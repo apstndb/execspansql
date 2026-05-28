@@ -362,8 +362,12 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
 
 	defer func() {
-		if err := csvWriter.Flush(); err != nil && writeErr == nil {
-			writeErr = err
+		if err := csvWriter.Flush(); err != nil {
+			if writeErr == nil {
+				writeErr = err
+			} else {
+				writeErr = errors.Join(writeErr, err)
+			}
 		}
 	}()
 
