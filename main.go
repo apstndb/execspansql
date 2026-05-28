@@ -371,6 +371,7 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 		}
 	}()
 
+	gcvs := make([]spanner.GenericColumnValue, len(types))
 	for _, row := range rs.GetRows() {
 		if row == nil {
 			return fmt.Errorf("nil row in result set")
@@ -379,7 +380,6 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 		if len(values) != len(types) {
 			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(types))
 		}
-		gcvs := make([]spanner.GenericColumnValue, len(types))
 		for i, typ := range types {
 			gcvs[i] = spanner.GenericColumnValue{Type: typ, Value: values[i]}
 		}
