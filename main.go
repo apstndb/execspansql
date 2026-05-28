@@ -352,7 +352,7 @@ func _main() error {
 	return printResult(enc, jqQuery.Run(object))
 }
 
-func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
+func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
 		return errors.New("result set metadata is missing or invalid")
 	}
@@ -361,7 +361,6 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
 	fields := rs.GetMetadata().GetRowType().GetFields()
 	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
 
-	var writeErr error
 	defer func() {
 		if err := csvWriter.Flush(); err != nil && writeErr == nil {
 			writeErr = err
@@ -381,11 +380,10 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
 			gcvs[i] = spanner.GenericColumnValue{Type: typ, Value: values[i]}
 		}
 		if err := csvWriter.WriteGCVs(gcvs); err != nil {
-			writeErr = err
 			return err
 		}
 	}
-	return writeErr
+	return
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
