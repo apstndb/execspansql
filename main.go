@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
 	"errors"
 	"github.com/apstndb/execspansql/internal"
 	"github.com/apstndb/execspansql/params"
@@ -39,6 +38,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerotel/interceptor"
+	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/itchyny/gojq"
 	"github.com/jessevdk/go-flags"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -353,34 +353,20 @@ func _main() error {
 }
 
 func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
+	csvWriter := svwriter.NewCSVWriter(writer, rs.GetMetadata())
 	fields := rs.GetMetadata().GetRowType().GetFields()
-
 	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
-
-	records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
-		return slices.Collect(
-			xiter.Map(
-				xiter.Zip(slices.Values(types), slices.Values(row.Values)),
-				internal.Tupled(internal.Must2(typeValueToStringExperimental)),
-			),
-		)
-	}))
-
-	csvWriter := csv.NewWriter(writer)
-	defer csvWriter.Flush()
-
-	header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
-
-	err := csvWriter.Write(header)
-	if err != nil {
-		return err
+	for _, row := range rs.GetRows() {
+		values := row.GetValues()
+		gcvs := make([]spanner.GenericColumnValue, len(types))
+		for i, typ := range types {
+			gcvs[i] = spanner.GenericColumnValue{Type: typ, Value: values[i]}
+		}
+		if err := csvWriter.WriteGCVs(gcvs); err != nil {
+			return err
+		}
 	}
-
-	err = csvWriter.WriteAll(records)
-	if err != nil {
-		return err
-	}
-	return nil
+	return csvWriter.Flush()
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
