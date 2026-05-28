@@ -31,7 +31,7 @@ func TestWriteCsvRowValueMismatch(t *testing.T) {
 	}
 	err := writeCsv(&bytes.Buffer{}, rs)
 	if err == nil {
-		t.Fatal("writeCsv() expected row count mismatch error")
+		t.Fatal("writeCsv() expected row value count mismatch error")
 	}
 }
 
