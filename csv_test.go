@@ -11,8 +11,6 @@ import (
 	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/types/known/structpb"
-	"slices"
-	"spheric.cloud/xiter"
 )
 
 func TestMain(m *testing.M) {
@@ -105,7 +103,6 @@ func TestExperimentalCsvDumpFixtures(t *testing.T) {
 func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) error {
 	csvWriter := svwriter.NewCSVWriter(out, svwriter.WithMetadata(rs.GetMetadata()))
 	fields := rs.GetMetadata().GetRowType().GetFields()
-	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
 
 	if len(rs.GetRows()) == 0 {
 		if err := csvWriter.WriteHeader(); err != nil {
@@ -114,11 +111,11 @@ func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) er
 		return csvWriter.Flush()
 	}
 
-	gcvs := make([]spanner.GenericColumnValue, len(types))
+	gcvs := make([]spanner.GenericColumnValue, len(fields))
 	for _, row := range rs.GetRows() {
 		values := row.GetValues()
-		for i, typ := range types {
-			gcvs[i] = spanner.GenericColumnValue{Type: typ, Value: values[i]}
+		for i, field := range fields {
+			gcvs[i] = spanner.GenericColumnValue{Type: field.GetType(), Value: values[i]}
 		}
 		if err := csvWriter.WriteGCVs(gcvs); err != nil {
 			return err

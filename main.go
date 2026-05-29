@@ -359,7 +359,6 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 
 	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
 	fields := rs.GetMetadata().GetRowType().GetFields()
-	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
 
 	defer func() {
 		if err := csvWriter.Flush(); err != nil {
@@ -375,17 +374,17 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 		return csvWriter.WriteHeader()
 	}
 
-	gcvs := make([]spanner.GenericColumnValue, len(types))
+	gcvs := make([]spanner.GenericColumnValue, len(fields))
 	for _, row := range rs.GetRows() {
 		if row == nil {
 			return fmt.Errorf("nil row in result set")
 		}
 		values := row.GetValues()
-		if len(values) != len(types) {
-			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(types))
+		if len(values) != len(fields) {
+			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(fields))
 		}
-		for i, typ := range types {
-			gcvs[i] = spanner.GenericColumnValue{Type: typ, Value: values[i]}
+		for i, field := range fields {
+			gcvs[i] = spanner.GenericColumnValue{Type: field.GetType(), Value: values[i]}
 		}
 		if err := csvWriter.WriteGCVs(gcvs); err != nil {
 			return err
