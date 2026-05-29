@@ -357,7 +357,7 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 		return errors.New("result set metadata is missing or invalid")
 	}
 
-	csvWriter := svwriter.NewCSVWriter(writer, rs.GetMetadata())
+	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
 	fields := rs.GetMetadata().GetRowType().GetFields()
 	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
 
