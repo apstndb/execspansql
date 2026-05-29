@@ -189,6 +189,40 @@ func TestGenerateParams(t *testing.T) {
 			},
 			ExpectErr: false,
 		},
+		{
+			Name: "cast_literals",
+			Input: map[string]string{
+				"int64_cast":    "CAST(42 AS INT64)",
+				"string_cast":   `CAST("hello" AS STRING)`,
+				"float64_cast":  "CAST(3.14 AS FLOAT64)",
+				"bool_cast":     "CAST(TRUE AS BOOL)",
+				"null_int_cast": "CAST(NULL AS INT64)",
+			},
+			PermitType: false,
+			ExpectResult: map[string]interface{}{
+				"int64_cast": spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
+					Value: structpb.NewStringValue("42"),
+				},
+				"string_cast": spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_STRING},
+					Value: structpb.NewStringValue("hello"),
+				},
+				"float64_cast": spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_FLOAT64},
+					Value: structpb.NewNumberValue(3.14),
+				},
+				"bool_cast": spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_BOOL},
+					Value: structpb.NewBoolValue(true),
+				},
+				"null_int_cast": spanner.GenericColumnValue{
+					Type:  &sppb.Type{Code: sppb.TypeCode_INT64},
+					Value: structpb.NewNullValue(),
+				},
+			},
+			ExpectErr: false,
+		},
 	}
 	for _, tt := range tcases {
 		t.Run(tt.Name, func(t *testing.T) {

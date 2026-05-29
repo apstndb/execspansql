@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
 	"errors"
 	"github.com/apstndb/execspansql/internal"
 	"github.com/apstndb/execspansql/params"
@@ -39,6 +38,7 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerotel/interceptor"
+	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/itchyny/gojq"
 	"github.com/jessevdk/go-flags"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -352,35 +352,45 @@ func _main() error {
 	return printResult(enc, jqQuery.Run(object))
 }
 
-func writeCsv(writer io.Writer, rs *sppb.ResultSet) error {
+func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
+	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
+		return errors.New("result set metadata is missing or invalid")
+	}
+
+	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
 	fields := rs.GetMetadata().GetRowType().GetFields()
 
-	types := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetType))
+	defer func() {
+		if err := csvWriter.Flush(); err != nil {
+			if writeErr == nil {
+				writeErr = err
+			} else {
+				writeErr = errors.Join(writeErr, err)
+			}
+		}
+	}()
 
-	records := slices.Collect(xiter.Map(slices.Values(rs.GetRows()), func(row *structpb.ListValue) []string {
-		return slices.Collect(
-			xiter.Map(
-				xiter.Zip(slices.Values(types), slices.Values(row.Values)),
-				internal.Tupled(internal.Must2(typeValueToStringExperimental)),
-			),
-		)
-	}))
-
-	csvWriter := csv.NewWriter(writer)
-	defer csvWriter.Flush()
-
-	header := slices.Collect(xiter.Map(slices.Values(fields), (*sppb.StructType_Field).GetName))
-
-	err := csvWriter.Write(header)
-	if err != nil {
-		return err
+	if len(rs.GetRows()) == 0 {
+		return csvWriter.WriteHeader()
 	}
 
-	err = csvWriter.WriteAll(records)
-	if err != nil {
-		return err
+	gcvs := make([]spanner.GenericColumnValue, len(fields))
+	for _, row := range rs.GetRows() {
+		if row == nil {
+			return fmt.Errorf("nil row in result set")
+		}
+		values := row.GetValues()
+		if len(values) != len(fields) {
+			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(fields))
+		}
+		for i, field := range fields {
+			gcvs[i] = spanner.GenericColumnValue{Type: field.GetType(), Value: values[i]}
+		}
+		if err := csvWriter.WriteGCVs(gcvs); err != nil {
+			return err
+		}
 	}
-	return nil
+	return
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
