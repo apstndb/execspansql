@@ -10,7 +10,7 @@ require (
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10
 	github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb
-	github.com/apstndb/spanvalue v0.4.0
+	github.com/apstndb/spanvalue v0.4.1
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0

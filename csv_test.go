@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"io"
 	"os"
 	"testing"
 
@@ -18,7 +19,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestExperimentalCsvSpanvalueContract ensures writeCsv stays aligned with
+// TestExperimentalCsvSpanvalueContract ensures writeCsvFromResultSet stays aligned with
 // spanvalue's DelimitedWriter (SimpleFormatConfig). When spanvalue is upgraded,
 // update golden files if the change is intentional:
 //
@@ -31,16 +32,50 @@ func TestExperimentalCsvSpanvalueContract(t *testing.T) {
 			t.Parallel()
 
 			var got, want bytes.Buffer
-			if err := writeCsv(&got, rs); err != nil {
-				t.Fatalf("writeCsv() error = %v", err)
+			if err := writeCsvFromResultSet(&got, rs); err != nil {
+				t.Fatalf("writeCsvFromResultSet() error = %v", err)
 			}
 			if err := experimentalCsvViaSpanvalueWriter(&want, rs); err != nil {
 				t.Fatalf("experimentalCsvViaSpanvalueWriter() error = %v", err)
 			}
 			if diff := cmp.Diff(want.String(), got.String()); diff != "" {
-				t.Fatalf("writeCsv() output mismatch (-spanvalue writer +writeCsv):\n%s", diff)
+				t.Fatalf("writeCsvFromResultSet() output mismatch (-spanvalue writer +writeCsvFromResultSet):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestExperimentalCsvRowIterPathMatchesResultSet checks that the production RowIterator
+// path (WriteRow) matches the ResultSet test helper (WriteStructValues).
+func TestExperimentalCsvRowIterPathMatchesResultSet(t *testing.T) {
+	t.Parallel()
+
+	rs := resultSet(
+		[]string{"id", "name"},
+		[]*sppb.Type{{Code: sppb.TypeCode_INT64}, {Code: sppb.TypeCode_STRING}},
+		[][]*structpb.Value{
+			{structpb.NewStringValue("1"), structpb.NewStringValue("alice")},
+			{structpb.NewStringValue("2"), structpb.NewStringValue("bob")},
+		},
+	)
+	row1, err := spanner.NewRow([]string{"id", "name"}, []interface{}{int64(1), "alice"})
+	if err != nil {
+		t.Fatalf("spanner.NewRow() error = %v", err)
+	}
+	row2, err := spanner.NewRow([]string{"id", "name"}, []interface{}{int64(2), "bob"})
+	if err != nil {
+		t.Fatalf("spanner.NewRow() error = %v", err)
+	}
+
+	var fromResultSet, fromRowIter bytes.Buffer
+	if err := writeCsvFromResultSet(&fromResultSet, rs); err != nil {
+		t.Fatalf("writeCsvFromResultSet() error = %v", err)
+	}
+	if err := writeCsvFromPreparedRows(&fromRowIter, rs.GetMetadata(), []*spanner.Row{row1, row2}); err != nil {
+		t.Fatalf("writeCsvFromPreparedRows() error = %v", err)
+	}
+	if diff := cmp.Diff(fromResultSet.String(), fromRowIter.String()); diff != "" {
+		t.Fatalf("RowIterator path output mismatch (-ResultSet +RowIter):\n%s", diff)
 	}
 }
 
@@ -50,8 +85,11 @@ func TestExperimentalCsvBehavior(t *testing.T) {
 
 	t.Run("invalid_metadata", func(t *testing.T) {
 		t.Parallel()
-		if err := writeCsv(&bytes.Buffer{}, nil); err == nil {
-			t.Fatal("writeCsv(nil) expected error")
+		if err := writeCsvFromResultSet(&bytes.Buffer{}, nil); err == nil {
+			t.Fatal("writeCsvFromResultSet(nil) expected error")
+		}
+		if err := prepareCsvRowType(svwriter.NewCSVWriter(&bytes.Buffer{}), nil); err == nil {
+			t.Fatal("prepareCsvRowType(nil metadata) expected error")
 		}
 	})
 
@@ -62,8 +100,8 @@ func TestExperimentalCsvBehavior(t *testing.T) {
 			[]*sppb.Type{{Code: sppb.TypeCode_INT64}, {Code: sppb.TypeCode_STRING}},
 			[][]*structpb.Value{{structpb.NewStringValue("1")}},
 		)
-		if err := writeCsv(&bytes.Buffer{}, rs); err == nil {
-			t.Fatal("writeCsv() expected row value count mismatch error")
+		if err := writeCsvFromResultSet(&bytes.Buffer{}, rs); err == nil {
+			t.Fatal("writeCsvFromResultSet() expected row value count mismatch error")
 		}
 	})
 
@@ -75,8 +113,8 @@ func TestExperimentalCsvBehavior(t *testing.T) {
 			nil,
 		)
 		rs.Rows = []*structpb.ListValue{nil}
-		if err := writeCsv(&bytes.Buffer{}, rs); err == nil {
-			t.Fatal("writeCsv() expected error for nil row")
+		if err := writeCsvFromResultSet(&bytes.Buffer{}, rs); err == nil {
+			t.Fatal("writeCsvFromResultSet() expected error for nil row")
 		}
 	})
 }
@@ -92,32 +130,32 @@ func TestExperimentalCsvDumpFixtures(t *testing.T) {
 	}
 	for name, rs := range fixtures {
 		var buf bytes.Buffer
-		if err := writeCsv(&buf, rs); err != nil {
-			t.Fatalf("%s: writeCsv() error = %v", name, err)
+		if err := writeCsvFromResultSet(&buf, rs); err != nil {
+			t.Fatalf("%s: writeCsvFromResultSet() error = %v", name, err)
 		}
 		t.Logf("=== %s ===\n%s", name, buf.String())
 	}
 }
 
-// experimentalCsvViaSpanvalueWriter is the reference path writeCsv is expected to follow.
+// experimentalCsvViaSpanvalueWriter is the reference path for ResultSet-shaped fixtures.
 func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) error {
 	csvWriter := svwriter.NewCSVWriter(out, svwriter.WithMetadata(rs.GetMetadata()))
-	fields := rs.GetMetadata().GetRowType().GetFields()
-
-	if len(rs.GetRows()) == 0 {
-		if err := csvWriter.WriteHeader(); err != nil {
+	for _, row := range rs.GetRows() {
+		if err := csvWriter.WriteStructValues(row.GetValues()); err != nil {
 			return err
 		}
-		return csvWriter.Flush()
 	}
+	return csvWriter.Flush()
+}
 
-	gcvs := make([]spanner.GenericColumnValue, len(fields))
-	for _, row := range rs.GetRows() {
-		values := row.GetValues()
-		for i, field := range fields {
-			gcvs[i] = spanner.GenericColumnValue{Type: field.GetType(), Value: values[i]}
-		}
-		if err := csvWriter.WriteGCVs(gcvs); err != nil {
+// writeCsvFromPreparedRows exercises the WriteRow path after PrepareRowType, matching production.
+func writeCsvFromPreparedRows(w io.Writer, metadata *sppb.ResultSetMetadata, rows []*spanner.Row) error {
+	csvWriter := svwriter.NewCSVWriter(w)
+	if err := prepareCsvRowType(csvWriter, metadata); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := csvWriter.WriteRow(row); err != nil {
 			return err
 		}
 	}

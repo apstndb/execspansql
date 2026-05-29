@@ -16,8 +16,8 @@ func TestExperimentalCsvGolden(t *testing.T) {
 			goldenPath := filepath.Join("testdata", "experimental_csv", name+".golden")
 
 			var buf bytes.Buffer
-			if err := writeCsv(&buf, rs); err != nil {
-				t.Fatalf("writeCsv() error = %v", err)
+			if err := writeCsvFromResultSet(&buf, rs); err != nil {
+				t.Fatalf("writeCsvFromResultSet() error = %v", err)
 			}
 			got := buf.Bytes()
 
@@ -37,7 +37,7 @@ func TestExperimentalCsvGolden(t *testing.T) {
 				t.Fatalf("ReadFile(%q) error = %v (run: go test -update-golden -run TestExperimentalCsvGolden)", goldenPath, err)
 			}
 			if string(got) != string(want) {
-				t.Fatalf("writeCsv() output mismatch for %s\n\ngot:\n%s\n\nwant:\n%s", name, got, want)
+				t.Fatalf("writeCsvFromResultSet() output mismatch for %s\n\ngot:\n%s\n\nwant:\n%s", name, got, want)
 			}
 		})
 	}

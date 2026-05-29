@@ -196,7 +196,7 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 			},
 		}, err
 	default:
-		panic(fmt.Sprintf("unknown mode: %d", mode))
+		panic(fmt.Sprintf("unknown mode: %T", mode))
 	}
 }
 
@@ -330,13 +330,13 @@ func _main() error {
 		return nil
 	}
 
+	if o.Format == "experimental_csv" {
+		return runAndWriteCsv(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+	}
+
 	rs, err := runInNewTransaction(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
 	if err != nil {
 		return err
-	}
-
-	if o.Format == "experimental_csv" {
-		return writeCsv(os.Stdout, rs)
 	}
 
 	object, err := toProtojsonObject(rs)
@@ -352,45 +352,102 @@ func _main() error {
 	return printResult(enc, jqQuery.Run(object))
 }
 
-func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
+func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {
+	switch mode := mode.(type) {
+	case readWrite:
+		var buf bytes.Buffer
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			buf.Reset()
+			return writeCsvFromRowIter(&buf, tx.QueryWithOptions(ctx, stmt, opts), redactRows)
+		})
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(os.Stdout, &buf)
+		return err
+	case single:
+		iter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
+		return writeCsvFromRowIter(os.Stdout, iter, redactRows)
+	case partitionedDML:
+		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
+		if err != nil {
+			return err
+		}
+		return writeCsvFromResultSet(os.Stdout, &sppb.ResultSet{
+			Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{}},
+			Stats: &sppb.ResultSetStats{
+				RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			},
+		})
+	default:
+		panic(fmt.Sprintf("unknown mode: %T", mode))
+	}
+}
+
+// writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
+// It follows spanvalue v0.4.1 RowIterator guidance: PrepareRowType after the first Next
+// (including iterator.Done), WriteRow in the loop, return Flush (not defer Flush).
+func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
+	defer rowIter.Stop()
+
+	csvWriter := svwriter.NewCSVWriter(writer)
+
+	if redactRows {
+		if err := skipRowIter(rowIter); err != nil {
+			return err
+		}
+		if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
+			return err
+		}
+		return csvWriter.Flush()
+	}
+
+	first := true
+	for {
+		row, err := rowIter.Next()
+		if err != nil && !errors.Is(err, iterator.Done) {
+			return err
+		}
+		if first {
+			first = false
+			if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
+				return err
+			}
+		}
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+		if err := csvWriter.WriteRow(row); err != nil {
+			return err
+		}
+	}
+	return csvWriter.Flush()
+}
+
+func prepareCsvRowType(csvWriter *svwriter.DelimitedWriter, metadata *sppb.ResultSetMetadata) error {
+	if metadata == nil || metadata.GetRowType() == nil {
+		return errors.New("result set metadata is missing or invalid")
+	}
+	return csvWriter.PrepareRowType(metadata.GetRowType())
+}
+
+// writeCsvFromResultSet writes CSV from an in-memory ResultSet. Used by unit tests
+// and partitioned DML (no RowIterator). WithMetadata at construction is appropriate here.
+func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
 		return errors.New("result set metadata is missing or invalid")
 	}
 
 	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
-	fields := rs.GetMetadata().GetRowType().GetFields()
-
-	defer func() {
-		if err := csvWriter.Flush(); err != nil {
-			if writeErr == nil {
-				writeErr = err
-			} else {
-				writeErr = errors.Join(writeErr, err)
-			}
-		}
-	}()
-
-	if len(rs.GetRows()) == 0 {
-		return csvWriter.WriteHeader()
-	}
-
-	gcvs := make([]spanner.GenericColumnValue, len(fields))
 	for _, row := range rs.GetRows() {
 		if row == nil {
 			return fmt.Errorf("nil row in result set")
 		}
-		values := row.GetValues()
-		if len(values) != len(fields) {
-			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(fields))
-		}
-		for i, field := range fields {
-			gcvs[i] = spanner.GenericColumnValue{Type: field.GetType(), Value: values[i]}
-		}
-		if err := csvWriter.WriteGCVs(gcvs); err != nil {
+		if err := csvWriter.WriteStructValues(row.GetValues()); err != nil {
 			return err
 		}
 	}
-	return
+	return csvWriter.Flush()
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
