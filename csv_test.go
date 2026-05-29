@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"io"
 	"os"
 	"testing"
 
@@ -70,13 +71,8 @@ func TestExperimentalCsvRowIterPathMatchesResultSet(t *testing.T) {
 	if err := writeCsvFromResultSet(&fromResultSet, rs); err != nil {
 		t.Fatalf("writeCsvFromResultSet() error = %v", err)
 	}
-	if err := writeCsvWithMetadata(&fromRowIter, rs.GetMetadata(), func(yield func(*spanner.Row, error) bool) {
-		if !yield(row1, nil) {
-			return
-		}
-		yield(row2, nil)
-	}); err != nil {
-		t.Fatalf("writeCsvWithMetadata() error = %v", err)
+	if err := writeCsvFromPreparedRows(&fromRowIter, rs.GetMetadata(), []*spanner.Row{row1, row2}); err != nil {
+		t.Fatalf("writeCsvFromPreparedRows() error = %v", err)
 	}
 	if diff := cmp.Diff(fromResultSet.String(), fromRowIter.String()); diff != "" {
 		t.Fatalf("RowIterator path output mismatch (-ResultSet +RowIter):\n%s", diff)
@@ -92,8 +88,8 @@ func TestExperimentalCsvBehavior(t *testing.T) {
 		if err := writeCsvFromResultSet(&bytes.Buffer{}, nil); err == nil {
 			t.Fatal("writeCsvFromResultSet(nil) expected error")
 		}
-		if err := writeCsvWithMetadata(&bytes.Buffer{}, nil, nil); err == nil {
-			t.Fatal("writeCsvWithMetadata(nil metadata) expected error")
+		if err := prepareCsvRowType(svwriter.NewCSVWriter(&bytes.Buffer{}), nil); err == nil {
+			t.Fatal("prepareCsvRowType(nil metadata) expected error")
 		}
 	})
 
@@ -146,6 +142,18 @@ func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) er
 	csvWriter := svwriter.NewCSVWriter(out, svwriter.WithMetadata(rs.GetMetadata()))
 	for _, row := range rs.GetRows() {
 		if err := csvWriter.WriteStructValues(row.GetValues()); err != nil {
+			return err
+		}
+	}
+	return csvWriter.Flush()
+}
+
+// writeCsvFromPreparedRows exercises the WriteRow path when metadata is already known
+// (equivalent to RowIterator export after PrepareRowType).
+func writeCsvFromPreparedRows(w io.Writer, metadata *sppb.ResultSetMetadata, rows []*spanner.Row) error {
+	csvWriter := svwriter.NewCSVWriter(w, svwriter.WithMetadata(metadata))
+	for _, row := range rows {
+		if err := csvWriter.WriteRow(row); err != nil {
 			return err
 		}
 	}

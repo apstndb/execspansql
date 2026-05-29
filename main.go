@@ -379,88 +379,60 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 }
 
 // writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
+// It follows spanvalue v0.4.1 RowIterator guidance: PrepareRowType after the first Next
+// (including iterator.Done), WriteRow in the loop, return Flush (not defer Flush).
 func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
 	defer rowIter.Stop()
+
+	csvWriter := svwriter.NewCSVWriter(writer)
 
 	if redactRows {
 		if err := skipRowIter(rowIter); err != nil {
 			return err
 		}
-		return writeCsvWithMetadata(writer, rowIter.Metadata, nil)
-	}
-
-	row, err := rowIter.Next()
-	if errors.Is(err, iterator.Done) {
-		return writeCsvWithMetadata(writer, rowIter.Metadata, nil)
-	}
-	if err != nil {
-		return err
-	}
-
-	return writeCsvWithMetadata(writer, rowIter.Metadata, prependRowSeq(row, rowIter))
-}
-
-func prependRowSeq(first *spanner.Row, rowIter *spanner.RowIterator) iter.Seq2[*spanner.Row, error] {
-	return func(yield func(*spanner.Row, error) bool) {
-		if !yield(first, nil) {
-			return
-		}
-		for row, err := range rowIterSeq(rowIter) {
-			if !yield(row, err) {
-				return
-			}
-		}
-	}
-}
-
-func writeCsvWithMetadata(writer io.Writer, metadata *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) (writeErr error) {
-	if metadata == nil || metadata.GetRowType() == nil {
-		return errors.New("result set metadata is missing or invalid")
-	}
-
-	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(metadata))
-	defer func() {
-		if err := csvWriter.Flush(); err != nil {
-			if writeErr == nil {
-				writeErr = err
-			} else {
-				writeErr = errors.Join(writeErr, err)
-			}
-		}
-	}()
-
-	for row, err := range rows {
-		if err != nil {
+		if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
 			return err
 		}
-		if row == nil {
-			return fmt.Errorf("nil row in result set")
+		return csvWriter.Flush()
+	}
+
+	first := true
+	for {
+		row, err := rowIter.Next()
+		if first {
+			first = false
+			if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
+				return err
+			}
+		}
+		if errors.Is(err, iterator.Done) {
+			break
+		}
+		if err != nil {
+			return err
 		}
 		if err := csvWriter.WriteRow(row); err != nil {
 			return err
 		}
 	}
-	return nil
+	return csvWriter.Flush()
+}
+
+func prepareCsvRowType(csvWriter *svwriter.DelimitedWriter, metadata *sppb.ResultSetMetadata) error {
+	if metadata == nil || metadata.GetRowType() == nil {
+		return errors.New("result set metadata is missing or invalid")
+	}
+	return csvWriter.PrepareRowType(metadata.GetRowType())
 }
 
 // writeCsvFromResultSet writes CSV from an in-memory ResultSet. Used by unit tests
-// and partitioned DML (no RowIterator).
-func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
+// and partitioned DML (no RowIterator). WithMetadata at construction is appropriate here.
+func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
 		return errors.New("result set metadata is missing or invalid")
 	}
 
 	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
-	defer func() {
-		if err := csvWriter.Flush(); err != nil {
-			if writeErr == nil {
-				writeErr = err
-			} else {
-				writeErr = errors.Join(writeErr, err)
-			}
-		}
-	}()
-
 	for _, row := range rs.GetRows() {
 		if row == nil {
 			return fmt.Errorf("nil row in result set")
@@ -469,7 +441,7 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) (writeErr error
 			return err
 		}
 	}
-	return nil
+	return csvWriter.Flush()
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
