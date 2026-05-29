@@ -196,7 +196,7 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 			},
 		}, err
 	default:
-		panic(fmt.Sprintf("unknown mode: %d", mode))
+		panic(fmt.Sprintf("unknown mode: %T", mode))
 	}
 }
 
@@ -355,9 +355,15 @@ func _main() error {
 func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {
 	switch mode := mode.(type) {
 	case readWrite:
+		var buf bytes.Buffer
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-			return writeCsvFromRowIter(os.Stdout, tx.QueryWithOptions(ctx, stmt, opts), redactRows)
+			buf.Reset()
+			return writeCsvFromRowIter(&buf, tx.QueryWithOptions(ctx, stmt, opts), redactRows)
 		})
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(os.Stdout, &buf)
 		return err
 	case single:
 		iter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
@@ -374,7 +380,7 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 			},
 		})
 	default:
-		panic(fmt.Sprintf("unknown mode: %d", mode))
+		panic(fmt.Sprintf("unknown mode: %T", mode))
 	}
 }
 
