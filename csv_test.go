@@ -148,10 +148,12 @@ func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) er
 	return csvWriter.Flush()
 }
 
-// writeCsvFromPreparedRows exercises the WriteRow path when metadata is already known
-// (equivalent to RowIterator export after PrepareRowType).
+// writeCsvFromPreparedRows exercises the WriteRow path after PrepareRowType, matching production.
 func writeCsvFromPreparedRows(w io.Writer, metadata *sppb.ResultSetMetadata, rows []*spanner.Row) error {
-	csvWriter := svwriter.NewCSVWriter(w, svwriter.WithMetadata(metadata))
+	csvWriter := svwriter.NewCSVWriter(w)
+	if err := prepareCsvRowType(csvWriter, metadata); err != nil {
+		return err
+	}
 	for _, row := range rows {
 		if err := csvWriter.WriteRow(row); err != nil {
 			return err
