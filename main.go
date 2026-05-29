@@ -330,13 +330,13 @@ func _main() error {
 		return nil
 	}
 
+	if o.Format == "experimental_csv" {
+		return runAndWriteCsv(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+	}
+
 	rs, err := runInNewTransaction(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
 	if err != nil {
 		return err
-	}
-
-	if o.Format == "experimental_csv" {
-		return writeCsv(os.Stdout, rs)
 	}
 
 	object, err := toProtojsonObject(rs)
@@ -352,14 +352,73 @@ func _main() error {
 	return printResult(enc, jqQuery.Run(object))
 }
 
-func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
-	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
+func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {
+	switch mode := mode.(type) {
+	case readWrite:
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			return writeCsvFromRowIter(os.Stdout, tx.QueryWithOptions(ctx, stmt, opts), redactRows)
+		})
+		return err
+	case single:
+		iter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
+		return writeCsvFromRowIter(os.Stdout, iter, redactRows)
+	case partitionedDML:
+		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
+		if err != nil {
+			return err
+		}
+		return writeCsvFromResultSet(os.Stdout, &sppb.ResultSet{
+			Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{}},
+			Stats: &sppb.ResultSetStats{
+				RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			},
+		})
+	default:
+		panic(fmt.Sprintf("unknown mode: %d", mode))
+	}
+}
+
+// writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
+func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
+	defer rowIter.Stop()
+
+	if redactRows {
+		if err := skipRowIter(rowIter); err != nil {
+			return err
+		}
+		return writeCsvWithMetadata(writer, rowIter.Metadata, nil)
+	}
+
+	row, err := rowIter.Next()
+	if errors.Is(err, iterator.Done) {
+		return writeCsvWithMetadata(writer, rowIter.Metadata, nil)
+	}
+	if err != nil {
+		return err
+	}
+
+	return writeCsvWithMetadata(writer, rowIter.Metadata, prependRowSeq(row, rowIter))
+}
+
+func prependRowSeq(first *spanner.Row, rowIter *spanner.RowIterator) iter.Seq2[*spanner.Row, error] {
+	return func(yield func(*spanner.Row, error) bool) {
+		if !yield(first, nil) {
+			return
+		}
+		for row, err := range rowIterSeq(rowIter) {
+			if !yield(row, err) {
+				return
+			}
+		}
+	}
+}
+
+func writeCsvWithMetadata(writer io.Writer, metadata *sppb.ResultSetMetadata, rows iter.Seq2[*spanner.Row, error]) (writeErr error) {
+	if metadata == nil || metadata.GetRowType() == nil {
 		return errors.New("result set metadata is missing or invalid")
 	}
 
-	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
-	fields := rs.GetMetadata().GetRowType().GetFields()
-
+	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(metadata))
 	defer func() {
 		if err := csvWriter.Flush(); err != nil {
 			if writeErr == nil {
@@ -370,27 +429,47 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 		}
 	}()
 
-	if len(rs.GetRows()) == 0 {
-		return csvWriter.WriteHeader()
+	for row, err := range rows {
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return fmt.Errorf("nil row in result set")
+		}
+		if err := csvWriter.WriteRow(row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeCsvFromResultSet writes CSV from an in-memory ResultSet. Used by unit tests
+// and partitioned DML (no RowIterator).
+func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
+	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
+		return errors.New("result set metadata is missing or invalid")
 	}
 
-	gcvs := make([]spanner.GenericColumnValue, len(fields))
+	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
+	defer func() {
+		if err := csvWriter.Flush(); err != nil {
+			if writeErr == nil {
+				writeErr = err
+			} else {
+				writeErr = errors.Join(writeErr, err)
+			}
+		}
+	}()
+
 	for _, row := range rs.GetRows() {
 		if row == nil {
 			return fmt.Errorf("nil row in result set")
 		}
-		values := row.GetValues()
-		if len(values) != len(fields) {
-			return fmt.Errorf("row value count %d does not match metadata field count %d", len(values), len(fields))
-		}
-		for i, field := range fields {
-			gcvs[i] = spanner.GenericColumnValue{Type: field.GetType(), Value: values[i]}
-		}
-		if err := csvWriter.WriteGCVs(gcvs); err != nil {
+		if err := csvWriter.WriteStructValues(row.GetValues()); err != nil {
 			return err
 		}
 	}
-	return
+	return nil
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
