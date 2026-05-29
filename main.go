@@ -405,6 +405,9 @@ func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactR
 	first := true
 	for {
 		row, err := rowIter.Next()
+		if err != nil && !errors.Is(err, iterator.Done) {
+			return err
+		}
 		if first {
 			first = false
 			if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
@@ -413,9 +416,6 @@ func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactR
 		}
 		if errors.Is(err, iterator.Done) {
 			break
-		}
-		if err != nil {
-			return err
 		}
 		if err := csvWriter.WriteRow(row); err != nil {
 			return err
