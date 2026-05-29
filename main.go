@@ -371,6 +371,10 @@ func writeCsv(writer io.Writer, rs *sppb.ResultSet) (writeErr error) {
 		}
 	}()
 
+	if len(rs.GetRows()) == 0 {
+		return csvWriter.WriteHeader()
+	}
+
 	gcvs := make([]spanner.GenericColumnValue, len(types))
 	for _, row := range rs.GetRows() {
 		if row == nil {
