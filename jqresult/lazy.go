@@ -76,7 +76,9 @@ func (l *Lazy) drain() error {
 	if alreadyStreamed {
 		materializedRows = cachedRows
 	} else {
-		materializedRows, drainErr = l.rows.drainUnlocked()
+		var remaining []any
+		remaining, drainErr = l.rows.drainUnlocked()
+		materializedRows = append(cachedRows, remaining...)
 	}
 	var stats map[string]any
 	if drainErr == nil && l.statsFn != nil {
@@ -89,6 +91,7 @@ func (l *Lazy) drain() error {
 	l.stats = stats
 	l.drainErr = drainErr
 	l.drained = true
+	l.rowsStreamDone = true
 	l.mu.Unlock()
 
 	l.rows.Stop()

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	"github.com/wader/gojq"
 )
 
@@ -95,6 +96,26 @@ func TestLazyStopDoesNotDrain(t *testing.T) {
 	l.Stop()
 	if l.drained {
 		t.Fatal("Stop() must not drain rows")
+	}
+}
+
+func TestDrainAppendsStreamedRows(t *testing.T) {
+	t.Parallel()
+	l := &Lazy{
+		materializedRows: []any{[]any{int64(1)}},
+		rows:             &RowIter{stopped: true},
+		statsFn: func(*spanner.RowIterator) (map[string]any, error) {
+			return map[string]any{"ok": true}, nil
+		},
+	}
+	if err := l.drain(); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.materializedRows) != 1 {
+		t.Fatalf("materialized rows: got %d want 1", len(l.materializedRows))
+	}
+	if l.stats["ok"] != true {
+		t.Fatalf("stats: %v", l.stats)
 	}
 }
 
