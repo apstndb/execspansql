@@ -336,6 +336,23 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			t.Fatalf("stats rowCount: got %v", stats)
 		}
 
+		objectRows := runLazy(t, "{rows: .rows, rc: .stats.rowCount}", false, sppb.ExecuteSqlRequest_PROFILE.Enum())
+		if len(objectRows) != 1 {
+			t.Fatalf("object rows output: got %v", objectRows)
+		}
+		objRows, ok := objectRows[0].(map[string]any)
+		if !ok {
+			t.Fatalf("object rows type: %T", objectRows[0])
+		}
+		normalized, err := jqresult.NormalizeForEncode(objRows["rows"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		rowSlice, ok := normalized.([]any)
+		if !ok || len(rowSlice) != 3 {
+			t.Fatalf("normalized rows after stats: got %v (%T)", normalized, normalized)
+		}
+
 		combined := runLazy(t, "{rc: .stats.rowCount, ids: [.rows[] | .[0]]}", false, sppb.ExecuteSqlRequest_PROFILE.Enum())
 		if len(combined) != 1 {
 			t.Fatalf("combined output: got %v", combined)

@@ -146,7 +146,7 @@ func (l *Lazy) rowsJQValue() any {
 	if drained {
 		return materializedRowsIter(materialized)
 	}
-	return l.rows
+	return &lazyRowsField{l: l}
 }
 
 func (l *Lazy) JQValueType() string { return gojq.JQTypeObject }
@@ -318,6 +318,33 @@ func (f *lazyStatsField) JQValueEach() any {
 // Stop releases the row iterator without draining unconsumed rows.
 func (l *Lazy) Stop() {
 	l.rows.Stop()
+}
+
+// lazyRowsField streams rows until drain, then replays materializedRows.
+type lazyRowsField struct {
+	l   *Lazy
+	mat *materializedIter
+}
+
+func (f *lazyRowsField) Next() (any, bool) {
+	f.l.mu.Lock()
+	drained := f.l.drained
+	redact := f.l.redact
+	f.l.mu.Unlock()
+
+	if redact {
+		return nil, false
+	}
+	if drained {
+		if f.mat == nil {
+			f.l.mu.Lock()
+			rows := append([]any(nil), f.l.materializedRows...)
+			f.l.mu.Unlock()
+			f.mat = &materializedIter{rows: rows}
+		}
+		return f.mat.Next()
+	}
+	return f.l.rows.Next()
 }
 
 type materializedIter struct {
