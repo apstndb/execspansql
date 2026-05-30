@@ -134,6 +134,30 @@ func TestDrainAppendsStreamedRows(t *testing.T) {
 	}
 }
 
+func TestLazyRowsFieldMaterializeTwice(t *testing.T) {
+	t.Parallel()
+	l := &Lazy{
+		materializedRows: []any{[]any{int64(1)}, []any{int64(2)}},
+		rowsStreamDone:   true,
+		rows:             &RowIter{stopped: true},
+	}
+	f := &lazyRowsField{
+		l:   l,
+		mat: materializedRowsIter([]any{[]any{int64(1)}}), // partially consumed replay iter
+	}
+	s1, err := f.materializeSlice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := f.materializeSlice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s1.([]any)) != 2 || len(s2.([]any)) != 2 {
+		t.Fatalf("got %v and %v", s1, s2)
+	}
+}
+
 func TestLazyDuplicateRowsCapture(t *testing.T) {
 	t.Parallel()
 	l := &Lazy{

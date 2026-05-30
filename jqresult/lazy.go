@@ -152,13 +152,14 @@ func (l *Lazy) rowsJQValue() any {
 	l.mu.Lock()
 	drained := l.drained
 	redact := l.redact
+	streamDone := l.rowsStreamDone
 	materialized := append([]any(nil), l.materializedRows...)
 	l.mu.Unlock()
 
 	if redact {
-		return gojq.NewIter[any]()
+		return &lazyRowsField{l: l, mat: materializedRowsIter([]any{})}
 	}
-	if drained || l.rowsStreamDone {
+	if drained || streamDone {
 		return &lazyRowsField{l: l, mat: materializedRowsIter(materialized)}
 	}
 	return &lazyRowsField{l: l}
@@ -341,7 +342,29 @@ type lazyRowsField struct {
 	mat gojq.Iter
 }
 
+func (f *lazyRowsField) cachedRows() ([]any, error) {
+	f.l.mu.Lock()
+	defer f.l.mu.Unlock()
+	if f.l.redact {
+		return []any{}, nil
+	}
+	rows := append([]any(nil), f.l.materializedRows...)
+	if rows == nil {
+		rows = []any{}
+	}
+	return rows, nil
+}
+
 func (f *lazyRowsField) materializeSlice() (any, error) {
+	f.l.mu.Lock()
+	streamDone := f.l.rowsStreamDone
+	drained := f.l.drained
+	f.l.mu.Unlock()
+
+	if streamDone || drained {
+		return f.cachedRows()
+	}
+
 	var out []any
 	for {
 		v, ok := f.Next()
