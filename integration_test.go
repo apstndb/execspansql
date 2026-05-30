@@ -353,5 +353,10 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		if len(redacted) != 1 {
 			t.Fatalf("redacted stats: got %v", redacted)
 		}
+
+		redactedRows := runLazy(t, ".rows[]", true, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(redactedRows) != 0 {
+			t.Fatalf("redacted .rows[]: got %d values, want 0", len(redactedRows))
+		}
 	})
 }
