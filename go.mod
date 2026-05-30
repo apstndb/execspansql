@@ -1,6 +1,6 @@
 module github.com/apstndb/execspansql
 
-go 1.23.2
+go 1.24.0
 
 require (
 	cloud.google.com/go/spanner v1.84.1
@@ -14,9 +14,9 @@ require (
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
-	github.com/itchyny/gojq v0.12.16
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/samber/lo v1.53.0
+	github.com/wader/gojq v0.12.1-0.20260315123642-6d8c75fc0e74
 	go.opentelemetry.io/otel v1.36.0
 	go.opentelemetry.io/otel/bridge/opencensus v1.27.0
 	go.opentelemetry.io/otel/sdk v1.36.0
@@ -71,7 +71,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
-	github.com/itchyny/timefmt-go v0.1.6 // indirect
+	github.com/itchyny/timefmt-go v0.1.7 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
@@ -112,7 +112,7 @@ require (
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect

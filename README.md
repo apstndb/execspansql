@@ -54,7 +54,7 @@ Arguments:
   database:                                    (required) ID of the database.
 ```
 
-Local build requires Go 1.23.
+Local build requires Go 1.24.
 
 ```
 $ go install github.com/apstndb/execspansql@latest
@@ -114,7 +114,18 @@ $ execspansql ${DATABASE_ID} --query-mode=PROFILE \
 
 ### Embedded jq
 
-execspansql can process output using embedded [gojq](https://github.com/itchyny/gojq) using `--jq-filter` flag.
+execspansql can process output using embedded [wader/gojq](https://github.com/wader/gojq) (jq-compatible; includes `JQValue` for lazy inputs) using `--filter` flag.
+
+`--jq-input-mode` controls how results are passed to jq (json/yaml only):
+
+| Mode | Input | Typical filter |
+|------|--------|----------------|
+| `eager` (default) | Full ResultSet object | `.`, `.stats.queryPlan` |
+| `lazy` | `JQValue` root (`metadata` / `rows` Iter / `stats`) | `.rows[]`, `.stats.queryPlan` |
+
+In `lazy` mode, `metadata` is populated after the first row is read from Spanner (or after a zero-row result). Use `.rows[]` to stream rows; `.rows` alone is a jq array only after rows are materialized (for example after `.stats` drains them). Accessing `.stats` before `.rows` still allows later `.rows[]` to emit the drained rows.
+
+Output expands top-level `gojq.Iter` to one JSON/YAML document per row (JSONL-style). Nested `Iter` values inside objects are expanded to arrays on encode.
 
 #### Example: Extract QueryPlan
 

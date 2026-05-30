@@ -26,7 +26,6 @@ import (
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	"google.golang.org/api/option"
@@ -39,9 +38,9 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
-	"github.com/itchyny/gojq"
+	"github.com/apstndb/execspansql/jqresult"
 	"github.com/jessevdk/go-flags"
-	"google.golang.org/protobuf/encoding/protojson"
+	"github.com/wader/gojq"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -80,6 +79,7 @@ type opts struct {
 	JqFilter             string            `long:"filter" description:"jq filter"`
 	JqRawOutput          bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
 	JqFromFile           string            `long:"filter-file" description:"(--from-file of jq)"`
+	JqInputMode          string            `long:"jq-input-mode" description:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)." default:"eager" choice:"eager" choice:"lazy"`
 	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
 	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
 	TraceProject         string            `long:"experimental-trace-project"`
@@ -127,6 +127,10 @@ func processFlags() (o opts, err error) {
 
 	if o.JqFilter != "" && o.JqFromFile != "" {
 		return o, errors.New("--jq-filter and --jq-from-file are exclusive")
+	}
+
+	if _, err := jqresult.ParseInputMode(o.JqInputMode); err != nil {
+		return o, err
 	}
 	return o, nil
 }
@@ -230,18 +234,23 @@ func _main() error {
 	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	defer cancel()
 
-	// Use jqQuery even if empty filter
+	jqMode, err := jqresult.ParseInputMode(o.JqInputMode)
+	if err != nil {
+		return err
+	}
+	if err := jqMode.ValidateFormat(o.Format); err != nil {
+		return err
+	}
+
 	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
 	if err != nil {
 		return err
 	}
-
-	// Overwrite to "." because gojq don't support empty query
 	if jqFilter == "" {
-		jqFilter = "."
+		jqFilter = jqresult.DefaultFilter(jqMode)
 	}
 
-	jqQuery, err := gojq.Parse(jqFilter)
+	jqCode, err := jqresult.Compile(jqFilter, jqMode)
 	if err != nil {
 		return err
 	}
@@ -334,22 +343,7 @@ func _main() error {
 		return runAndWriteCsv(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
 	}
 
-	rs, err := runInNewTransaction(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
-	if err != nil {
-		return err
-	}
-
-	object, err := toProtojsonObject(rs)
-	if err != nil {
-		return err
-	}
-
-	enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
-	if err != nil {
-		return err
-	}
-
-	return printResult(enc, jqQuery.Run(object))
+	return runJqOutput(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o, jqMode, jqCode)
 }
 
 func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {
@@ -471,31 +465,16 @@ func newClient(ctx context.Context, project, instance, database string, logGrpc 
 	}, copts...)
 }
 
-func toProtojsonObject(m proto.Message) (map[string]interface{}, error) {
-	b, err := protojson.Marshal(m)
-	if err != nil {
-		return nil, err
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
-
-	var object map[string]interface{}
-	err = dec.Decode(&object)
-	if err != nil {
-		return nil, err
-	}
-	return object, nil
+type encoder interface {
+	Encode(v any) error
 }
-
-type encoder interface{ Encode(v interface{}) error }
 
 type stringPassThroughEncoderWrapper struct {
 	Writer io.Writer
 	Enc    encoder
 }
 
-func (enc *stringPassThroughEncoderWrapper) Encode(v interface{}) error {
+func (enc *stringPassThroughEncoderWrapper) Encode(v any) error {
 	if s, ok := v.(string); ok {
 		_, err := fmt.Fprintln(enc.Writer, s)
 		return err
@@ -503,21 +482,95 @@ func (enc *stringPassThroughEncoderWrapper) Encode(v interface{}) error {
 	return enc.Enc.Encode(v)
 }
 
-func printResult(enc encoder, iter gojq.Iter) error {
-	for {
-		v, ok := iter.Next()
-		if !ok {
-			break
-		}
-		if err, ok := v.(error); ok {
-			return err
-		}
-		err := enc.Encode(v)
+func runJqOutput(
+	ctx context.Context,
+	client *spanner.Client,
+	stmt spanner.Statement,
+	opts spanner.QueryOptions,
+	mode queryMode,
+	o opts,
+	jqMode jqresult.InputMode,
+	jqCode *gojq.Code,
+) error {
+	if jqMode == jqresult.InputEager {
+		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, o.RedactRows)
 		if err != nil {
 			return err
 		}
+		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
+		if err != nil {
+			return err
+		}
+		iter, cleanup, err := jqresult.Execute(jqCode, jqMode, nil, rs, o.RedactRows)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		return jqresult.Print(enc, iter)
 	}
-	return nil
+
+	switch mode := mode.(type) {
+	case readWrite:
+		var buf bytes.Buffer
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			buf.Reset()
+			enc, err := newEncoder(&buf, o.Format, o.CompactOutput, o.JqRawOutput)
+			if err != nil {
+				return err
+			}
+			return runJqOnRowIter(tx.QueryWithOptions(ctx, stmt, opts), o.RedactRows, jqMode, jqCode, enc)
+		})
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(os.Stdout, &buf)
+		return err
+	case single:
+		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
+		if err != nil {
+			return err
+		}
+		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
+		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc)
+	case partitionedDML:
+		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
+		if err != nil {
+			return err
+		}
+		rs := &sppb.ResultSet{
+			Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{}},
+			Stats: &sppb.ResultSetStats{
+				RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
+			},
+		}
+		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
+		if err != nil {
+			return err
+		}
+		iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, false)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		return jqresult.Print(enc, iter)
+	default:
+		panic(fmt.Sprintf("unknown mode: %T", mode))
+	}
+}
+
+func runJqOnRowIter(
+	rowIter *spanner.RowIterator,
+	redactRows bool,
+	jqMode jqresult.InputMode,
+	jqCode *gojq.Code,
+	enc encoder,
+) error {
+	iter, cleanup, err := jqresult.Execute(jqCode, jqMode, rowIter, nil, redactRows)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	return jqresult.Print(enc, iter)
 }
 
 func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {
@@ -564,35 +617,7 @@ func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) 
 // convertToResultSet convert rows and rowIter into sppb.ResultSet.
 // rowIter must be consumed with iterator.Done, and not Stop()-ed.
 func convertToResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*sppb.ResultSet, error) {
-	// Leave null if fields are not populated
-	rs := &sppb.ResultSet{
-		Rows:     rows,
-		Metadata: rowIter.Metadata,
-	}
-
-	var queryStats *structpb.Struct
-	if rowIter.QueryStats != nil {
-		qs, err := structpb.NewStruct(rowIter.QueryStats)
-		if err != nil {
-			return nil, err
-		}
-		queryStats = qs
-	}
-
-	// If there are no stats member, entire Stats must be nil
-	if rowIter.QueryPlan == nil && queryStats == nil && rowIter.RowCount == 0 {
-		return rs, nil
-	}
-
-	rs.Stats = &sppb.ResultSetStats{
-		QueryPlan:  rowIter.QueryPlan,
-		QueryStats: queryStats,
-	}
-	if rowIter.RowCount != 0 {
-		rs.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount}
-	}
-
-	return rs, nil
+	return jqresult.BuildResultSet(rows, rowIter)
 }
 
 func rowIterSeq(rowIter *spanner.RowIterator) iter.Seq2[*spanner.Row, error] {
