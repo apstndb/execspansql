@@ -22,6 +22,21 @@ func (s *stubIter) Next() (any, bool) {
 	return v, true
 }
 
+func TestNormalizeForEncodeEmptyIter(t *testing.T) {
+	t.Parallel()
+	got, err := NormalizeForEncode(gojq.NewIter[any]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, ok := got.([]any)
+	if !ok {
+		t.Fatalf("got %T", got)
+	}
+	if rows == nil || len(rows) != 0 {
+		t.Fatalf("got %#v want non-nil empty slice", got)
+	}
+}
+
 func TestNormalizeForEncodeIter(t *testing.T) {
 	t.Parallel()
 	var it gojq.Iter = &stubIter{vals: []int{1, 2}}

@@ -87,6 +87,9 @@ func (l *Lazy) drain() error {
 	l.ioMu.Unlock()
 
 	l.mu.Lock()
+	if materializedRows == nil {
+		materializedRows = []any{}
+	}
 	l.materializedRows = materializedRows
 	l.stats = stats
 	l.drainErr = drainErr

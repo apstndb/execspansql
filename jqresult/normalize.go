@@ -54,7 +54,7 @@ func NormalizeForEncode(v any) (any, error) {
 }
 
 func normalizeIter(it gojq.Iter) ([]any, error) {
-	var out []any
+	out := make([]any, 0)
 	for {
 		x, ok := it.Next()
 		if !ok {
