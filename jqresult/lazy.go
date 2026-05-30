@@ -19,7 +19,8 @@ func StatsFuncFromProto() StatsFunc {
 
 // Lazy is a JQValue root for a Spanner query result. Accessing stats drains rows; rows streams via gojq.Iter.
 type Lazy struct {
-	mu sync.Mutex
+	mu   sync.Mutex
+	ioMu sync.Mutex
 
 	rowIter *spanner.RowIterator
 	redact  bool
@@ -38,27 +39,51 @@ type Lazy struct {
 
 // NewLazy builds a lazy jq input. rowIter must not have been read yet; Lazy takes ownership and Stop()s it.
 func NewLazy(rowIter *spanner.RowIterator, redact bool, statsFn StatsFunc) *Lazy {
-	return &Lazy{
+	l := &Lazy{
 		rowIter: rowIter,
 		redact:  redact,
 		statsFn: statsFn,
-		rows:    NewRowIter(rowIter, redact, RowToJSON),
 	}
+	l.rows = NewRowIter(rowIter, redact, RowToJSON)
+	l.rows.ioMu = &l.ioMu
+	return l
 }
 
 func (l *Lazy) drain() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l.drained {
-		return l.drainErr
+		err := l.drainErr
+		l.mu.Unlock()
+		return err
 	}
-	l.materializedRows, l.drainErr = l.rows.Drain()
-	if l.drainErr == nil && l.statsFn != nil {
-		l.stats, l.drainErr = l.statsFn(l.rowIter)
+	l.mu.Unlock()
+
+	l.ioMu.Lock()
+	l.mu.Lock()
+	if l.drained {
+		err := l.drainErr
+		l.mu.Unlock()
+		l.ioMu.Unlock()
+		return err
 	}
+	l.mu.Unlock()
+
+	materializedRows, drainErr := l.rows.drainUnlocked()
+	var stats map[string]any
+	if drainErr == nil && l.statsFn != nil {
+		stats, drainErr = l.statsFn(l.rowIter)
+	}
+	l.ioMu.Unlock()
+
+	l.mu.Lock()
+	l.materializedRows = materializedRows
+	l.stats = stats
+	l.drainErr = drainErr
 	l.drained = true
+	l.mu.Unlock()
+
 	l.rows.Stop()
-	return l.drainErr
+	return drainErr
 }
 
 func (l *Lazy) ensureMetadata() error {
@@ -70,14 +95,27 @@ func (l *Lazy) ensureMetadata() error {
 	}
 	l.mu.Unlock()
 
-	if err := l.rows.Prime(); err != nil {
+	l.ioMu.Lock()
+	l.mu.Lock()
+	if l.metadataReady {
+		err := l.metadataErr
+		l.mu.Unlock()
+		l.ioMu.Unlock()
+		return err
+	}
+	l.mu.Unlock()
+
+	if err := l.rows.primeUnlocked(); err != nil {
 		l.mu.Lock()
 		l.metadataErr = err
 		l.metadataReady = true
 		l.mu.Unlock()
+		l.ioMu.Unlock()
 		return err
 	}
 	m, err := MetadataMap(l.rowIter)
+	l.ioMu.Unlock()
+
 	l.mu.Lock()
 	l.metadata = m
 	l.metadataErr = err
