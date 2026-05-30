@@ -158,8 +158,8 @@ func (l *Lazy) rowsJQValue() any {
 	if redact {
 		return gojq.NewIter[any]()
 	}
-	if drained {
-		return materializedRowsIter(materialized)
+	if drained || l.rowsStreamDone {
+		return &lazyRowsField{l: l, mat: materializedRowsIter(materialized)}
 	}
 	return &lazyRowsField{l: l}
 }
@@ -338,7 +338,7 @@ func (l *Lazy) Stop() {
 // lazyRowsField streams rows and caches them so multiple captured .rows values can replay.
 type lazyRowsField struct {
 	l   *Lazy
-	mat *materializedIter
+	mat gojq.Iter
 }
 
 func (f *lazyRowsField) materializeSlice() (any, error) {
@@ -400,9 +400,31 @@ func (f *lazyRowsField) JQValueSlice(start, end int) any {
 	return rows[start:end]
 }
 
-func (f *lazyRowsField) JQValueKeys() any { return nil }
+func (f *lazyRowsField) JQValueKeys() any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	rows := s.([]any)
+	keys := make([]any, len(rows))
+	for i := range rows {
+		keys[i] = i
+	}
+	return keys
+}
 
-func (f *lazyRowsField) JQValueHas(any) any { return false }
+func (f *lazyRowsField) JQValueHas(key any) any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	rows := s.([]any)
+	i, ok := key.(int)
+	if !ok {
+		return false
+	}
+	return i >= 0 && i < len(rows)
+}
 
 func (f *lazyRowsField) JQValueToNumber() any { return nil }
 
@@ -439,7 +461,7 @@ func (f *lazyRowsField) Next() (any, bool) {
 		if f.mat == nil {
 			rows := append([]any(nil), f.l.materializedRows...)
 			f.l.mu.Unlock()
-			f.mat = &materializedIter{rows: rows}
+			f.mat = materializedRowsIter(rows)
 			return f.mat.Next()
 		}
 		f.l.mu.Unlock()
