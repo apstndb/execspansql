@@ -98,6 +98,41 @@ func TestLazyStopDoesNotDrain(t *testing.T) {
 	}
 }
 
+func TestLazyEachStatsDeferred(t *testing.T) {
+	t.Parallel()
+	l := &Lazy{
+		metadata:      map[string]any{"c": 1},
+		metadataReady: true,
+		stats:         map[string]any{"n": 2},
+		drained:       true,
+	}
+	q, err := gojq.Parse(".stats.n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter := q.Run(l)
+	v, ok := iter.Next()
+	if !ok {
+		t.Fatal("no output")
+	}
+	if v != 2 {
+		t.Fatalf("got %v want 2", v)
+	}
+
+	q2, err := gojq.Parse("to_entries | map(select(.key == \"stats\")) | .[0].value.n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter2 := q2.Run(l)
+	v2, ok := iter2.Next()
+	if !ok {
+		t.Fatal("no output from to_entries")
+	}
+	if v2 != 2 {
+		t.Fatalf("to_entries stats: got %v want 2", v2)
+	}
+}
+
 func TestLazyStatsKey(t *testing.T) {
 	t.Parallel()
 	l := &Lazy{

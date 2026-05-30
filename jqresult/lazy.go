@@ -223,19 +223,88 @@ func (l *Lazy) JQValueEach() any {
 	l.mu.Lock()
 	m := l.metadata
 	drained := l.drained
-	statsVal := l.stats
-	l.mu.Unlock()
-
-	rowsVal := l.rowsJQValue()
-	if statsVal == nil && !drained {
-		statsVal = nil
+	var statsVal any
+	if drained {
+		statsVal = l.stats
+	} else {
+		statsVal = &lazyStatsField{l: l}
 	}
+	l.mu.Unlock()
 
 	return []gojq.PathValue{
 		{Path: "metadata", Value: m},
-		{Path: "rows", Value: rowsVal},
+		{Path: "rows", Value: l.rowsJQValue()},
 		{Path: "stats", Value: statsVal},
 	}
+}
+
+// lazyStatsField defers stats reads until jq accesses the stats field (including via object iteration).
+type lazyStatsField struct {
+	l *Lazy
+}
+
+func (f *lazyStatsField) JQValueType() string { return gojq.JQTypeObject }
+
+func (f *lazyStatsField) JQValueLength() any { return 0 }
+
+func (f *lazyStatsField) JQValueSliceLen() any { return 0 }
+
+func (f *lazyStatsField) JQValueIndex(int) any { return nil }
+
+func (f *lazyStatsField) JQValueSlice(int, int) any { return nil }
+
+func (f *lazyStatsField) JQValueKeys() any {
+	s, err := f.l.statsMap()
+	if err != nil {
+		return err
+	}
+	keys := make([]any, 0, len(s))
+	for k := range s {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (f *lazyStatsField) JQValueHas(key any) any {
+	s, err := f.l.statsMap()
+	if err != nil {
+		return err
+	}
+	k, _ := key.(string)
+	_, ok := s[k]
+	return ok
+}
+
+func (f *lazyStatsField) JQValueToNumber() any { return nil }
+
+func (f *lazyStatsField) JQValueToString() any { return "" }
+
+func (f *lazyStatsField) JQValueToGoJQ() any {
+	s, err := f.l.statsMap()
+	if err != nil {
+		return err
+	}
+	return s
+}
+
+func (f *lazyStatsField) JQValueKey(name string) any {
+	s, err := f.l.statsMap()
+	if err != nil {
+		return err
+	}
+	return s[name]
+}
+
+func (f *lazyStatsField) JQValueEach() any {
+	s, err := f.l.statsMap()
+	if err != nil {
+		return err
+	}
+	pvs := make([]gojq.PathValue, 0, len(s))
+	for k, v := range s {
+		pvs = append(pvs, gojq.PathValue{Path: k, Value: v})
+	}
+	return pvs
 }
 
 // Stop releases the row iterator without draining unconsumed rows.
