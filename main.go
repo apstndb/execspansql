@@ -533,6 +533,9 @@ func runJqOutput(
 		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
 		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc)
 	case partitionedDML:
+		if jqMode != jqresult.InputEager {
+			return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
+		}
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		if err != nil {
 			return err

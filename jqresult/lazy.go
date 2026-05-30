@@ -245,9 +245,17 @@ type lazyStatsField struct {
 
 func (f *lazyStatsField) JQValueType() string { return gojq.JQTypeObject }
 
-func (f *lazyStatsField) JQValueLength() any { return 0 }
+func (f *lazyStatsField) JQValueLength() any {
+	s, err := f.l.statsMap()
+	if err != nil {
+		return err
+	}
+	return len(s)
+}
 
-func (f *lazyStatsField) JQValueSliceLen() any { return 0 }
+func (f *lazyStatsField) JQValueSliceLen() any {
+	return f.JQValueLength()
+}
 
 func (f *lazyStatsField) JQValueIndex(int) any { return nil }
 
