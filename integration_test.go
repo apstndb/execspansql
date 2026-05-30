@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"spheric.cloud/xiter"
 
+	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/params"
 )
 
@@ -284,6 +285,122 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 					return
 				}
 			})
+		}
+	})
+
+	t.Run("lazy jq with RowIterator", func(t *testing.T) {
+		runLazy := func(t *testing.T, filter string, redact bool, mode *sppb.ExecuteSqlRequest_QueryMode) []any {
+			t.Helper()
+			var opts spanner.QueryOptions
+			if mode != nil {
+				opts.Mode = mode
+			}
+			rowIter := client.Single().QueryWithOptions(ctx,
+				spanner.Statement{SQL: "SELECT SingerId FROM Singers ORDER BY SingerId LIMIT 3"},
+				opts,
+			)
+			code, err := jqresult.Compile(filter, jqresult.InputLazy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			var out []any
+			for {
+				v, ok := iter.Next()
+				if !ok {
+					return out
+				}
+				if err, isErr := v.(error); isErr {
+					t.Fatal(err)
+				}
+				out = append(out, v)
+			}
+		}
+
+		rows := runLazy(t, ".rows[]", false, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(rows) != 3 {
+			t.Fatalf("got %d row values, want 3", len(rows))
+		}
+
+		meta := runLazy(t, ".metadata.rowType.fields[0].name", false, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(meta) != 1 || meta[0] != "SingerId" {
+			t.Fatalf("metadata field name: got %v", meta)
+		}
+
+		stats := runLazy(t, ".stats.rowCount", false, sppb.ExecuteSqlRequest_PROFILE.Enum())
+		if len(stats) != 1 {
+			t.Fatalf("stats rowCount: got %v", stats)
+		}
+
+		lens := runLazy(t, "{alen: (.rows|length), blen: (.rows|length)}", false, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(lens) != 1 {
+			t.Fatalf("rows length output: got %v", lens)
+		}
+		lensObj, ok := lens[0].(map[string]any)
+		if !ok {
+			t.Fatalf("rows length type: %T", lens[0])
+		}
+		if lensObj["alen"] != 3 || lensObj["blen"] != 3 {
+			t.Fatalf("rows lengths: got %#v", lensObj)
+		}
+
+		dupRows := runLazy(t, "{a: [.rows[]], b: [.rows[]]}", false, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(dupRows) != 1 {
+			t.Fatalf("duplicate rows output: got %v", dupRows)
+		}
+		dupObj, ok := dupRows[0].(map[string]any)
+		if !ok {
+			t.Fatalf("duplicate rows type: %T", dupRows[0])
+		}
+		for _, key := range []string{"a", "b"} {
+			rowSlice, ok := dupObj[key].([]any)
+			if !ok || len(rowSlice) != 3 {
+				t.Fatalf("%s: got %v (%T)", key, dupObj[key], dupObj[key])
+			}
+		}
+
+		objectRows := runLazy(t, "{rows: .rows, rc: .stats.rowCount}", false, sppb.ExecuteSqlRequest_PROFILE.Enum())
+		if len(objectRows) != 1 {
+			t.Fatalf("object rows output: got %v", objectRows)
+		}
+		objRows, ok := objectRows[0].(map[string]any)
+		if !ok {
+			t.Fatalf("object rows type: %T", objectRows[0])
+		}
+		normalized, err := jqresult.NormalizeForEncode(objRows["rows"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		rowSlice, ok := normalized.([]any)
+		if !ok || len(rowSlice) != 3 {
+			t.Fatalf("normalized rows after stats: got %v (%T)", normalized, normalized)
+		}
+
+		combined := runLazy(t, "{rc: .stats.rowCount, ids: [.rows[] | .[0]]}", false, sppb.ExecuteSqlRequest_PROFILE.Enum())
+		if len(combined) != 1 {
+			t.Fatalf("combined output: got %v", combined)
+		}
+		obj, ok := combined[0].(map[string]any)
+		if !ok {
+			t.Fatalf("combined type: %T", combined[0])
+		}
+		ids, ok := obj["ids"].([]any)
+		if !ok || len(ids) != 3 {
+			t.Fatalf("combined ids: got %v", obj["ids"])
+		}
+
+		redacted := runLazy(t, ".stats.rowCount", true, sppb.ExecuteSqlRequest_PROFILE.Enum())
+		if len(redacted) != 1 {
+			t.Fatalf("redacted stats: got %v", redacted)
+		}
+
+		redactedRows := runLazy(t, ".rows[]", true, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(redactedRows) != 0 {
+			t.Fatalf("redacted .rows[]: got %d values, want 0", len(redactedRows))
 		}
 	})
 }
