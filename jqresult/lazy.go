@@ -464,11 +464,23 @@ func (f *lazyRowsField) JQValueToGoJQ() any {
 func (f *lazyRowsField) JQValueKey(string) any { return nil }
 
 func (f *lazyRowsField) JQValueEach() any {
-	s, err := f.materializeSlice()
+	f.l.mu.Lock()
+	streamDone := f.l.rowsStreamDone
+	drained := f.l.drained
+	redact := f.l.redact
+	f.l.mu.Unlock()
+
+	if redact {
+		return []gojq.PathValue{}
+	}
+	// While rows are still streaming, let jq iterate via Next() instead of materializing here.
+	if !streamDone && !drained {
+		return nil
+	}
+	rows, err := f.cachedRows()
 	if err != nil {
 		return err
 	}
-	rows := s.([]any)
 	pvs := make([]gojq.PathValue, len(rows))
 	for i, v := range rows {
 		pvs[i] = gojq.PathValue{Path: i, Value: v}
