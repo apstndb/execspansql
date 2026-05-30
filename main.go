@@ -533,29 +533,8 @@ func runJqOutput(
 		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
 		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc)
 	case partitionedDML:
-		if jqMode != jqresult.InputEager {
-			return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
-		}
-		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
-		if err != nil {
-			return err
-		}
-		rs := &sppb.ResultSet{
-			Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{}},
-			Stats: &sppb.ResultSetStats{
-				RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
-			},
-		}
-		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
-		if err != nil {
-			return err
-		}
-		iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, false)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		return jqresult.Print(enc, iter)
+		// Eager mode is handled above via runInNewTransaction.
+		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
 	default:
 		panic(fmt.Sprintf("unknown mode: %T", mode))
 	}
