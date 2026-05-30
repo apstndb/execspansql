@@ -19,6 +19,10 @@ func NormalizeForEncode(v any) (any, error) {
 	switch v := v.(type) {
 	case gojq.Iter:
 		return normalizeIter(v)
+	case *lazyRowsField:
+		return normalizeIter(v)
+	case *materializedIter:
+		return normalizeIter(v)
 	case gojq.JQValue:
 		return NormalizeForEncode(v.JQValueToGoJQ())
 	case []any:

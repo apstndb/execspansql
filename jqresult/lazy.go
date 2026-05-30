@@ -32,6 +32,7 @@ type Lazy struct {
 	stats            map[string]any
 	rows             *RowIter
 	materializedRows []any
+	rowsStreamDone bool
 
 	drained  bool
 	drainErr error
@@ -56,6 +57,8 @@ func (l *Lazy) drain() error {
 		l.mu.Unlock()
 		return err
 	}
+	alreadyStreamed := l.rowsStreamDone
+	cachedRows := append([]any(nil), l.materializedRows...)
 	l.mu.Unlock()
 
 	l.ioMu.Lock()
@@ -68,7 +71,13 @@ func (l *Lazy) drain() error {
 	}
 	l.mu.Unlock()
 
-	materializedRows, drainErr := l.rows.drainUnlocked()
+	var materializedRows []any
+	var drainErr error
+	if alreadyStreamed {
+		materializedRows = cachedRows
+	} else {
+		materializedRows, drainErr = l.rows.drainUnlocked()
+	}
 	var stats map[string]any
 	if drainErr == nil && l.statsFn != nil {
 		stats, drainErr = l.statsFn(l.rowIter)
@@ -320,31 +329,137 @@ func (l *Lazy) Stop() {
 	l.rows.Stop()
 }
 
-// lazyRowsField streams rows until drain, then replays materializedRows.
+// lazyRowsField streams rows and caches them so multiple captured .rows values can replay.
 type lazyRowsField struct {
 	l   *Lazy
 	mat *materializedIter
+}
+
+func (f *lazyRowsField) materializeSlice() (any, error) {
+	var out []any
+	for {
+		v, ok := f.Next()
+		if !ok {
+			if err, isErr := v.(error); isErr {
+				return nil, err
+			}
+			return out, nil
+		}
+		if err, isErr := v.(error); isErr {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+}
+
+func (f *lazyRowsField) JQValueType() string { return gojq.JQTypeArray }
+
+func (f *lazyRowsField) JQValueLength() any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	return len(s.([]any))
+}
+
+func (f *lazyRowsField) JQValueSliceLen() any { return f.JQValueLength() }
+
+func (f *lazyRowsField) JQValueIndex(i int) any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	rows := s.([]any)
+	if i < 0 || i >= len(rows) {
+		return nil
+	}
+	return rows[i]
+}
+
+func (f *lazyRowsField) JQValueSlice(start, end int) any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	rows := s.([]any)
+	if start < 0 {
+		start = 0
+	}
+	if end > len(rows) {
+		end = len(rows)
+	}
+	if start > end {
+		return []any{}
+	}
+	return rows[start:end]
+}
+
+func (f *lazyRowsField) JQValueKeys() any { return nil }
+
+func (f *lazyRowsField) JQValueHas(any) any { return false }
+
+func (f *lazyRowsField) JQValueToNumber() any { return nil }
+
+func (f *lazyRowsField) JQValueToString() any { return "" }
+
+func (f *lazyRowsField) JQValueToGoJQ() any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	return s
+}
+
+func (f *lazyRowsField) JQValueKey(string) any { return nil }
+
+func (f *lazyRowsField) JQValueEach() any {
+	s, err := f.materializeSlice()
+	if err != nil {
+		return err
+	}
+	rows := s.([]any)
+	pvs := make([]gojq.PathValue, len(rows))
+	for i, v := range rows {
+		pvs[i] = gojq.PathValue{Path: i, Value: v}
+	}
+	return pvs
 }
 
 func (f *lazyRowsField) Next() (any, bool) {
 	f.l.mu.Lock()
 	drained := f.l.drained
 	redact := f.l.redact
-	f.l.mu.Unlock()
-
-	if redact {
-		return nil, false
-	}
-	if drained {
+	if redact || drained || f.l.rowsStreamDone {
 		if f.mat == nil {
-			f.l.mu.Lock()
 			rows := append([]any(nil), f.l.materializedRows...)
 			f.l.mu.Unlock()
 			f.mat = &materializedIter{rows: rows}
+			return f.mat.Next()
 		}
+		f.l.mu.Unlock()
 		return f.mat.Next()
 	}
-	return f.l.rows.Next()
+	f.l.mu.Unlock()
+
+	f.l.ioMu.Lock()
+	v, ok := f.l.rows.nextUnlocked()
+	f.l.ioMu.Unlock()
+	if !ok {
+		if err, isErr := v.(error); isErr {
+			return err, true
+		}
+		f.l.mu.Lock()
+		f.l.rowsStreamDone = true
+		f.l.mu.Unlock()
+		return nil, false
+	}
+	if err, isErr := v.(error); isErr {
+		return err, true
+	}
+	f.l.mu.Lock()
+	f.l.materializedRows = append(f.l.materializedRows, v)
+	f.l.mu.Unlock()
+	return v, true
 }
 
 type materializedIter struct {

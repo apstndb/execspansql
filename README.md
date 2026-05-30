@@ -123,7 +123,7 @@ execspansql can process output using embedded [wader/gojq](https://github.com/wa
 | `eager` (default) | Full ResultSet object | `.`, `.stats.queryPlan` |
 | `lazy` | `JQValue` root (`metadata` / `rows` Iter / `stats`) | `.rows[]`, `.stats.queryPlan` |
 
-In `lazy` mode, `metadata` is populated after the first row is read from Spanner (or after a zero-row result). Use `.rows[]` to stream rows; `.rows` alone is a jq array only after rows are materialized (for example after `.stats` drains them). Accessing `.stats` before `.rows` still allows later `.rows[]` to emit the drained rows.
+In `lazy` mode, `metadata` is populated after the first row is read from Spanner (or after a zero-row result). Prefer `.rows[]` to stream rows. Bare `.rows` is a lazy iterator: reuse it in one object literal (for example `{a: .rows, b: .rows}`) may not duplicate rows because jq can evaluate the subexpression once; use `{a: [.rows[]], b: [.rows[]]}` when you need two row arrays. After `.stats` drains the iterator, captured `.rows` values replay from materialized rows.
 
 Output expands top-level `gojq.Iter` to one JSON/YAML document per row (JSONL-style). Nested `Iter` values inside objects are expanded to arrays on encode.
 

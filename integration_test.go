@@ -336,6 +336,33 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			t.Fatalf("stats rowCount: got %v", stats)
 		}
 
+		lens := runLazy(t, "{alen: (.rows|length), blen: (.rows|length)}", false, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(lens) != 1 {
+			t.Fatalf("rows length output: got %v", lens)
+		}
+		lensObj, ok := lens[0].(map[string]any)
+		if !ok {
+			t.Fatalf("rows length type: %T", lens[0])
+		}
+		if lensObj["alen"] != 3 || lensObj["blen"] != 3 {
+			t.Fatalf("rows lengths: got %#v", lensObj)
+		}
+
+		dupRows := runLazy(t, "{a: [.rows[]], b: [.rows[]]}", false, sppb.ExecuteSqlRequest_NORMAL.Enum())
+		if len(dupRows) != 1 {
+			t.Fatalf("duplicate rows output: got %v", dupRows)
+		}
+		dupObj, ok := dupRows[0].(map[string]any)
+		if !ok {
+			t.Fatalf("duplicate rows type: %T", dupRows[0])
+		}
+		for _, key := range []string{"a", "b"} {
+			rowSlice, ok := dupObj[key].([]any)
+			if !ok || len(rowSlice) != 3 {
+				t.Fatalf("%s: got %v (%T)", key, dupObj[key], dupObj[key])
+			}
+		}
+
 		objectRows := runLazy(t, "{rows: .rows, rc: .stats.rowCount}", false, sppb.ExecuteSqlRequest_PROFILE.Enum())
 		if len(objectRows) != 1 {
 			t.Fatalf("object rows output: got %v", objectRows)

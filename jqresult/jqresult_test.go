@@ -98,6 +98,40 @@ func TestLazyStopDoesNotDrain(t *testing.T) {
 	}
 }
 
+func TestLazyDuplicateRowsCapture(t *testing.T) {
+	t.Parallel()
+	l := &Lazy{
+		metadata:         map[string]any{"c": 1},
+		metadataReady:    true,
+		materializedRows: []any{[]any{int64(1)}, []any{int64(2)}},
+		rowsStreamDone:   true,
+		rows:             &RowIter{stopped: true},
+	}
+	q, err := gojq.Parse("{a: .rows, b: .rows}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter := q.Run(l)
+	v, ok := iter.Next()
+	if !ok {
+		t.Fatal("no output")
+	}
+	obj, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("got %T", v)
+	}
+	for _, key := range []string{"a", "b"} {
+		n, err := NormalizeForEncode(obj[key])
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, ok := n.([]any)
+		if !ok || len(rows) != 2 {
+			t.Fatalf("%s: got %v", key, n)
+		}
+	}
+}
+
 func TestLazyEachStatsDeferred(t *testing.T) {
 	t.Parallel()
 	l := &Lazy{
