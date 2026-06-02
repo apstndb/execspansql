@@ -88,7 +88,11 @@ func TestExperimentalCsvBehavior(t *testing.T) {
 		if err := writeCsvFromResultSet(&bytes.Buffer{}, nil); err == nil {
 			t.Fatal("writeCsvFromResultSet(nil) expected error")
 		}
-		if err := prepareCsvRowType(svwriter.NewCSVWriter(&bytes.Buffer{}), nil); err == nil {
+		w, err := svwriter.NewCSVWriter(&bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("NewCSVWriter() error = %v", err)
+		}
+		if err := prepareCsvRowType(w, nil); err == nil {
 			t.Fatal("prepareCsvRowType(nil metadata) expected error")
 		}
 	})
@@ -139,7 +143,10 @@ func TestExperimentalCsvDumpFixtures(t *testing.T) {
 
 // experimentalCsvViaSpanvalueWriter is the reference path for ResultSet-shaped fixtures.
 func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) error {
-	csvWriter := svwriter.NewCSVWriter(out, svwriter.WithMetadata(rs.GetMetadata()))
+	csvWriter, err := svwriter.NewCSVWriter(out, svwriter.WithMetadata(rs.GetMetadata()))
+	if err != nil {
+		return err
+	}
 	for _, row := range rs.GetRows() {
 		if err := csvWriter.WriteStructValues(row.GetValues()); err != nil {
 			return err
@@ -150,7 +157,10 @@ func experimentalCsvViaSpanvalueWriter(out *bytes.Buffer, rs *sppb.ResultSet) er
 
 // writeCsvFromPreparedRows exercises the WriteRow path after PrepareRowType, matching production.
 func writeCsvFromPreparedRows(w io.Writer, metadata *sppb.ResultSetMetadata, rows []*spanner.Row) error {
-	csvWriter := svwriter.NewCSVWriter(w)
+	csvWriter, err := svwriter.NewCSVWriter(w)
+	if err != nil {
+		return err
+	}
 	if err := prepareCsvRowType(csvWriter, metadata); err != nil {
 		return err
 	}
