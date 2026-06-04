@@ -360,8 +360,11 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 		_, err = io.Copy(os.Stdout, &buf)
 		return err
 	case single:
-		iter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
-		return writeCsvFromRowIter(os.Stdout, iter, redactRows)
+		return writeCsvFromRowIter(
+			os.Stdout,
+			client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts),
+			redactRows,
+		)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		if err != nil {
@@ -378,19 +381,27 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 	}
 }
 
+// csvRedactRowIteratorWriter implements [svwriter.RowIteratorWriter] for --redact-rows CSV:
+// it registers schema and flushes the header via the embedded [svwriter.DelimitedWriter] but
+// discards row bodies in WriteRow while WriteRowIterator drains the iterator.
+type csvRedactRowIteratorWriter struct {
+	*svwriter.DelimitedWriter
+}
+
+func (csvRedactRowIteratorWriter) WriteRow(*spanner.Row) error { return nil }
+
 // writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
-// It uses spanvalue WriteRowIterator (PrepareRowType on first Next, Flush in Finish, Stop on return).
+// Pass the query iterator directly to WriteRowIterator (it owns Stop); do not defer Stop at the call site.
 func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
 	csvWriter, err := svwriter.NewCSVWriter(writer)
 	if err != nil {
 		return err
 	}
+	iterWriter := svwriter.RowIteratorWriter(csvWriter)
 	if redactRows {
-		if err := skipRowIter(rowIter); err != nil {
-			return err
-		}
+		iterWriter = csvRedactRowIteratorWriter{csvWriter}
 	}
-	_, err = svwriter.WriteRowIterator(rowIter, csvWriter)
+	_, err = svwriter.WriteRowIterator(rowIter, iterWriter)
 	return err
 }
 
