@@ -379,12 +379,15 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 }
 
 // writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
-// It follows spanvalue v0.4.1 RowIterator guidance: PrepareRowType after the first Next
+// It follows spanvalue RowIterator guidance: PrepareRowType after the first Next
 // (including iterator.Done), WriteRow in the loop, return Flush (not defer Flush).
 func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
 	defer rowIter.Stop()
 
-	csvWriter := svwriter.NewCSVWriter(writer)
+	csvWriter, err := svwriter.NewCSVWriter(writer)
+	if err != nil {
+		return err
+	}
 
 	if redactRows {
 		if err := skipRowIter(rowIter); err != nil {
@@ -432,7 +435,10 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 		return errors.New("result set metadata is missing or invalid")
 	}
 
-	csvWriter := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
+	csvWriter, err := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
+	if err != nil {
+		return err
+	}
 	for _, row := range rs.GetRows() {
 		if row == nil {
 			return fmt.Errorf("nil row in result set")
