@@ -379,46 +379,19 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 }
 
 // writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
-// It follows spanvalue RowIterator guidance: PrepareRowType after the first Next
-// (including iterator.Done), WriteRow in the loop, return Flush (not defer Flush).
+// It uses spanvalue WriteRowIterator (PrepareRowType on first Next, Flush in Finish, Stop on return).
 func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
-	defer rowIter.Stop()
-
 	csvWriter, err := svwriter.NewCSVWriter(writer)
 	if err != nil {
 		return err
 	}
-
 	if redactRows {
 		if err := skipRowIter(rowIter); err != nil {
 			return err
 		}
-		if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
-			return err
-		}
-		return csvWriter.Flush()
 	}
-
-	first := true
-	for {
-		row, err := rowIter.Next()
-		if err != nil && !errors.Is(err, iterator.Done) {
-			return err
-		}
-		if first {
-			first = false
-			if err := prepareCsvRowType(csvWriter, rowIter.Metadata); err != nil {
-				return err
-			}
-		}
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err := csvWriter.WriteRow(row); err != nil {
-			return err
-		}
-	}
-	return csvWriter.Flush()
+	_, err = svwriter.WriteRowIterator(rowIter, csvWriter)
+	return err
 }
 
 func prepareCsvRowType(csvWriter *svwriter.DelimitedWriter, metadata *sppb.ResultSetMetadata) error {
