@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	_ "embed"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -402,5 +405,58 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		if len(redactedRows) != 0 {
 			t.Fatalf("redacted .rows[]: got %d values, want 0", len(redactedRows))
 		}
+	})
+
+	t.Run("experimental_csv writeCsvFromRowIter", func(t *testing.T) {
+		readCSV := func(t *testing.T, out string) [][]string {
+			t.Helper()
+			recs, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+			if err != nil {
+				t.Fatalf("parse csv: %v\noutput:\n%s", err, out)
+			}
+			return recs
+		}
+		writeCSV := func(t *testing.T, sql string, redact bool) [][]string {
+			t.Helper()
+			var buf bytes.Buffer
+			iter := client.Single().Query(ctx, spanner.Statement{SQL: sql})
+			if err := writeCsvFromRowIter(&buf, iter, redact); err != nil {
+				t.Fatalf("writeCsvFromRowIter(redact=%v): %v", redact, err)
+			}
+			return readCSV(t, buf.String())
+		}
+
+		t.Run("normal", func(t *testing.T) {
+			recs := writeCSV(t, "SELECT SingerId, FirstName FROM Singers ORDER BY SingerId LIMIT 2", false)
+			if len(recs) != 3 {
+				t.Fatalf("got %d csv records, want header + 2 rows: %#v", len(recs), recs)
+			}
+			if got, want := recs[0], []string{"SingerId", "FirstName"}; !cmp.Equal(got, want) {
+				t.Fatalf("header: got %v want %v", got, want)
+			}
+			if recs[1][0] != "1" || recs[2][0] != "2" {
+				t.Fatalf("SingerId column: %#v", recs)
+			}
+		})
+
+		t.Run("zero_rows", func(t *testing.T) {
+			recs := writeCSV(t, "SELECT SingerId FROM Singers WHERE SingerId = -1", false)
+			if len(recs) != 1 {
+				t.Fatalf("got %d csv records, want header only: %#v", len(recs), recs)
+			}
+			if got, want := recs[0], []string{"SingerId"}; !cmp.Equal(got, want) {
+				t.Fatalf("header: got %v want %v", got, want)
+			}
+		})
+
+		t.Run("redact_rows", func(t *testing.T) {
+			recs := writeCSV(t, "SELECT SingerId, FirstName FROM Singers ORDER BY SingerId LIMIT 2", true)
+			if len(recs) != 1 {
+				t.Fatalf("got %d csv records, want header only: %#v", len(recs), recs)
+			}
+			if got, want := recs[0], []string{"SingerId", "FirstName"}; !cmp.Equal(got, want) {
+				t.Fatalf("header: got %v want %v", got, want)
+			}
+		})
 	})
 }
