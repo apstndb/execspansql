@@ -6,9 +6,7 @@ import (
 	"errors"
 	"github.com/apstndb/execspansql/internal"
 	"github.com/apstndb/execspansql/params"
-	"google.golang.org/api/iterator"
 	"io"
-	"iter"
 	"regexp"
 	"slices"
 	"spheric.cloud/xiter"
@@ -36,9 +34,10 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/execspansql/jqresult"
+	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
-	"github.com/apstndb/execspansql/jqresult"
 	"github.com/jessevdk/go-flags"
 	"github.com/wader/gojq"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -568,56 +567,28 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 // consumeRowIterIntoResultSet construct *spannerpb.ResultSet using *spanner.RowIterator.
 // rowIter must be passed without calling any method, and it will be closed by this function.
 func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) (*sppb.ResultSet, error) {
-	defer rowIter.Stop()
-
-	var rows []*structpb.ListValue
-	var err error
-
 	if redactRows {
-		err = skipRowIter(rowIter)
-	} else {
-		rows, err = consumeRowIterIntoListValues(rowIter)
+		result, err := spaniter.DrainRowIterator(rowIter)
+		if err != nil {
+			return nil, err
+		}
+		return jqresult.BuildResultSetFromParts(nil, result.Metadata, result.Stats.QueryPlan, result.Stats.QueryStats, result.Stats.RowCount)
 	}
 
+	var result spaniter.RowIteratorResult
+	rows, err := consumeRowIterIntoListValues(rowIter,
+		spaniter.WithResult(&result),
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	return convertToResultSet(rows, rowIter)
-}
-
-// convertToResultSet convert rows and rowIter into sppb.ResultSet.
-// rowIter must be consumed with iterator.Done, and not Stop()-ed.
-func convertToResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*sppb.ResultSet, error) {
-	return jqresult.BuildResultSet(rows, rowIter)
-}
-
-func rowIterSeq(rowIter *spanner.RowIterator) iter.Seq2[*spanner.Row, error] {
-	return func(yield func(*spanner.Row, error) bool) {
-		for {
-			r, err := rowIter.Next()
-			if errors.Is(err, iterator.Done) {
-				return
-			}
-			if err != nil {
-				_ = yield(nil, err)
-				return
-			}
-			if !yield(r, nil) {
-				return
-			}
-		}
-	}
+	return jqresult.BuildResultSetFromParts(rows, result.Metadata, result.Stats.QueryPlan, result.Stats.QueryStats, result.Stats.RowCount)
 }
 
 func rowToListValue(r *spanner.Row) *structpb.ListValue {
 	return &structpb.ListValue{Values: slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))}
 }
 
-func consumeRowIterIntoListValues(rowIter *spanner.RowIterator) ([]*structpb.ListValue, error) {
-	return xiter.TryCollect(internal.MapNonError(rowIterSeq(rowIter), rowToListValue))
-}
-
-func skipRowIter(rowIter *spanner.RowIterator) error {
-	return rowIter.Do(func(r *spanner.Row) error { return nil })
+func consumeRowIterIntoListValues(rowIter *spanner.RowIterator, opts ...spaniter.Option) ([]*structpb.ListValue, error) {
+	return xiter.TryCollect(internal.MapNonError(spaniter.RowIteratorSeq(rowIter, opts...), rowToListValue))
 }

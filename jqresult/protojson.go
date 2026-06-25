@@ -61,30 +61,37 @@ func ResultSetMap(rs *sppb.ResultSet) (map[string]any, error) {
 
 // BuildResultSet constructs ResultSet stats from a consumed row iterator.
 func BuildResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*sppb.ResultSet, error) {
+	return BuildResultSetFromParts(rows, rowIter.Metadata, rowIter.QueryPlan, rowIter.QueryStats, rowIter.RowCount)
+}
+
+// BuildResultSetFromParts constructs a ResultSet from materialized rows and
+// consumed iterator metadata. rows may be nil when row values are intentionally
+// redacted; metadata and stats are still preserved from the drained iterator.
+func BuildResultSetFromParts(rows []*structpb.ListValue, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, queryStatsMap map[string]any, rowCount int64) (*sppb.ResultSet, error) {
 	out := &sppb.ResultSet{
 		Rows:     rows,
-		Metadata: rowIter.Metadata,
+		Metadata: metadata,
 	}
 
 	var queryStats *structpb.Struct
-	if rowIter.QueryStats != nil {
-		qs, err := structpb.NewStruct(rowIter.QueryStats)
+	if queryStatsMap != nil {
+		qs, err := structpb.NewStruct(queryStatsMap)
 		if err != nil {
 			return nil, err
 		}
 		queryStats = qs
 	}
 
-	if rowIter.QueryPlan == nil && queryStats == nil && rowIter.RowCount == 0 {
+	if queryPlan == nil && queryStats == nil && rowCount == 0 {
 		return out, nil
 	}
 
 	out.Stats = &sppb.ResultSetStats{
-		QueryPlan:  rowIter.QueryPlan,
+		QueryPlan:  queryPlan,
 		QueryStats: queryStats,
 	}
-	if rowIter.RowCount != 0 {
-		out.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: rowIter.RowCount}
+	if rowCount != 0 {
+		out.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: rowCount}
 	}
 	return out, nil
 }

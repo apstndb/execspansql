@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
 	_ "embed"
+	"encoding/csv"
 	"strings"
 	"testing"
 
@@ -12,6 +12,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/gsqlsep"
 	"github.com/apstndb/spanemuboost"
+	"github.com/apstndb/spaniter"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -84,14 +85,13 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		rowIter := clients.Client.Single().QueryWithOptions(ctx,
 			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @bl, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
-		defer rowIter.Stop()
 
-		err = skipRowIter(rowIter)
+		result, err := spaniter.DrainRowIterator(rowIter)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		got := rowIter.Metadata.GetRowType()
+		got := result.Metadata.GetRowType()
 		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 			t.Error(diff)
 			return
@@ -258,9 +258,8 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				rowIter := client.Single().QueryWithOptions(ctx,
 					spanner.Statement{SQL: "SELECT @v AS v", Params: params},
 					spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_NORMAL.Enum()})
-				defer rowIter.Stop()
 
-				rows, err := xiter.TryCollect(rowIterSeq(rowIter))
+				rows, err := xiter.TryCollect(spaniter.RowIteratorSeq(rowIter))
 				if err != nil {
 					t.Error(err)
 					return
@@ -404,6 +403,31 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		redactedRows := runLazy(t, ".rows[]", true, sppb.ExecuteSqlRequest_NORMAL.Enum())
 		if len(redactedRows) != 0 {
 			t.Fatalf("redacted .rows[]: got %d values, want 0", len(redactedRows))
+		}
+	})
+
+	t.Run("eager PROFILE redact rows preserves stats", func(t *testing.T) {
+		rowIter := client.Single().QueryWithOptions(ctx,
+			spanner.Statement{SQL: "SELECT SingerId FROM Singers ORDER BY SingerId LIMIT 3"},
+			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PROFILE.Enum()},
+		)
+
+		rs, err := consumeRowIterIntoResultSet(rowIter, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rs.GetRows()) != 0 {
+			t.Fatalf("rows: got %d, want 0", len(rs.GetRows()))
+		}
+		fields := rs.GetMetadata().GetRowType().GetFields()
+		if len(fields) != 1 || fields[0].GetName() != "SingerId" {
+			t.Fatalf("metadata fields: got %v", fields)
+		}
+		if rs.GetStats() == nil {
+			t.Fatal("stats: got nil, want PROFILE stats")
+		}
+		if rs.GetStats().GetQueryPlan() == nil && rs.GetStats().GetQueryStats() == nil {
+			t.Fatal("stats: got no query plan or query stats, want PROFILE stats")
 		}
 	})
 
