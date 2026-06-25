@@ -406,6 +406,31 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 	})
 
+	t.Run("eager PROFILE redact rows preserves stats", func(t *testing.T) {
+		rowIter := client.Single().QueryWithOptions(ctx,
+			spanner.Statement{SQL: "SELECT SingerId FROM Singers ORDER BY SingerId LIMIT 3"},
+			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PROFILE.Enum()},
+		)
+
+		rs, err := consumeRowIterIntoResultSet(rowIter, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rs.GetRows()) != 0 {
+			t.Fatalf("rows: got %d, want 0", len(rs.GetRows()))
+		}
+		fields := rs.GetMetadata().GetRowType().GetFields()
+		if len(fields) != 1 || fields[0].GetName() != "SingerId" {
+			t.Fatalf("metadata fields: got %v", fields)
+		}
+		if rs.GetStats() == nil {
+			t.Fatal("stats: got nil, want PROFILE stats")
+		}
+		if rs.GetStats().GetQueryPlan() == nil && rs.GetStats().GetQueryStats() == nil {
+			t.Fatal("stats: got no query plan or query stats, want PROFILE stats")
+		}
+	})
+
 	t.Run("experimental_csv writeCsvFromRowIter", func(t *testing.T) {
 		readCSV := func(t *testing.T, out string) [][]string {
 			t.Helper()

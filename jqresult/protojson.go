@@ -64,7 +64,9 @@ func BuildResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*
 	return BuildResultSetFromParts(rows, rowIter.Metadata, rowIter.QueryPlan, rowIter.QueryStats, rowIter.RowCount)
 }
 
-// BuildResultSetFromParts constructs a ResultSet from materialized rows and consumed iterator metadata.
+// BuildResultSetFromParts constructs a ResultSet from materialized rows and
+// consumed iterator metadata. rows may be nil when row values are intentionally
+// redacted; metadata and stats are still preserved from the drained iterator.
 func BuildResultSetFromParts(rows []*structpb.ListValue, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, queryStatsMap map[string]any, rowCount int64) (*sppb.ResultSet, error) {
 	out := &sppb.ResultSet{
 		Rows:     rows,
