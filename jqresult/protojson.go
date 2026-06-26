@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/spaniter"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -61,37 +62,30 @@ func ResultSetMap(rs *sppb.ResultSet) (map[string]any, error) {
 
 // BuildResultSet constructs ResultSet stats from a consumed row iterator.
 func BuildResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*sppb.ResultSet, error) {
-	return BuildResultSetFromParts(rows, rowIter.Metadata, rowIter.QueryPlan, rowIter.QueryStats, rowIter.RowCount)
+	return BuildResultSetFromParts(rows, rowIter.Metadata, spaniter.Stats{
+		QueryPlan:  rowIter.QueryPlan,
+		QueryStats: rowIter.QueryStats,
+		RowCount:   rowIter.RowCount,
+	})
 }
 
 // BuildResultSetFromParts constructs a ResultSet from materialized rows and
 // consumed iterator metadata. rows may be nil when row values are intentionally
 // redacted; metadata and stats are still preserved from the drained iterator.
-func BuildResultSetFromParts(rows []*structpb.ListValue, metadata *sppb.ResultSetMetadata, queryPlan *sppb.QueryPlan, queryStatsMap map[string]any, rowCount int64) (*sppb.ResultSet, error) {
+func BuildResultSetFromParts(rows []*structpb.ListValue, metadata *sppb.ResultSetMetadata, stats spaniter.Stats) (*sppb.ResultSet, error) {
 	out := &sppb.ResultSet{
 		Rows:     rows,
 		Metadata: metadata,
 	}
 
-	var queryStats *structpb.Struct
-	if queryStatsMap != nil {
-		qs, err := structpb.NewStruct(queryStatsMap)
-		if err != nil {
-			return nil, err
-		}
-		queryStats = qs
-	}
-
-	if queryPlan == nil && queryStats == nil && rowCount == 0 {
+	if !stats.HasResultSetStats() {
 		return out, nil
 	}
 
-	out.Stats = &sppb.ResultSetStats{
-		QueryPlan:  queryPlan,
-		QueryStats: queryStats,
+	resultStats, err := stats.ResultSetStats()
+	if err != nil {
+		return nil, err
 	}
-	if rowCount != 0 {
-		out.Stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: rowCount}
-	}
+	out.Stats = resultStats
 	return out, nil
 }
