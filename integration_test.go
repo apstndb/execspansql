@@ -35,6 +35,7 @@ func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Cont
 
 	var out []any
 	_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		out = nil
 		rowIter := tx.QueryWithOptions(ctx, spanner.Statement{SQL: sql}, spanner.QueryOptions{})
 		rs, err := resultset.Materialize(rowIter, false, spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact))
 		if err != nil {
