@@ -25,7 +25,7 @@ func Execute(code *gojq.Code, mode InputMode, rowIter *spanner.RowIterator, rs *
 		if rowIter == nil {
 			return nil, func() {}, fmt.Errorf("lazy mode requires an unread RowIterator")
 		}
-		lazy := NewLazy(rowIter, redactRows, StatsFuncFromProto())
+		lazy := NewLazy(rowIter, redactRows)
 		return code.Run(lazy), lazy.Stop, nil
 	default:
 		return nil, func() {}, fmt.Errorf("unknown jq input mode: %s", mode)

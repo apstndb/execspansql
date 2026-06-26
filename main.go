@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/apstndb/execspansql/internal"
 	"github.com/apstndb/execspansql/params"
 	"io"
 	"regexp"
-	"slices"
-	"spheric.cloud/xiter"
 	"time"
 
 	"fmt"
@@ -35,12 +32,11 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/execspansql/jqresult"
-	"github.com/apstndb/spaniter"
+	"github.com/apstndb/execspansql/resultset"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/jessevdk/go-flags"
 	"github.com/wader/gojq"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func main() {
@@ -182,12 +178,12 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
-			rs, err = consumeRowIterIntoResultSet(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
+			rs, err = resultset.Materialize(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
 			return err
 		})
 		return rs, err
 	case single:
-		return consumeRowIterIntoResultSet(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
+		return resultset.Materialize(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		return &sppb.ResultSet{
@@ -562,33 +558,4 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
-}
-
-// consumeRowIterIntoResultSet construct *spannerpb.ResultSet using *spanner.RowIterator.
-// rowIter must be passed without calling any method, and it will be closed by this function.
-func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) (*sppb.ResultSet, error) {
-	if redactRows {
-		result, err := spaniter.DrainRowIterator(rowIter)
-		if err != nil {
-			return nil, err
-		}
-		return jqresult.BuildResultSetFromParts(nil, result.Metadata, result.Stats)
-	}
-
-	var result spaniter.RowIteratorResult
-	rows, err := consumeRowIterIntoListValues(rowIter,
-		spaniter.WithResult(&result),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return jqresult.BuildResultSetFromParts(rows, result.Metadata, result.Stats)
-}
-
-func rowToListValue(r *spanner.Row) *structpb.ListValue {
-	return &structpb.ListValue{Values: slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))}
-}
-
-func consumeRowIterIntoListValues(rowIter *spanner.RowIterator, opts ...spaniter.Option) ([]*structpb.ListValue, error) {
-	return xiter.TryCollect(internal.MapNonError(spaniter.RowIteratorSeq(rowIter, opts...), rowToListValue))
 }

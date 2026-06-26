@@ -20,6 +20,7 @@ import (
 
 	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/params"
+	"github.com/apstndb/execspansql/resultset"
 )
 
 //go:embed testdata/ddl.sql
@@ -412,7 +413,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PROFILE.Enum()},
 		)
 
-		rs, err := consumeRowIterIntoResultSet(rowIter, true)
+		rs, err := resultset.Materialize(rowIter, true)
 		if err != nil {
 			t.Fatal(err)
 		}
