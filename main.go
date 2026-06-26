@@ -33,6 +33,7 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/resultset"
+	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/jessevdk/go-flags"
@@ -185,18 +186,25 @@ func dmlRowCountForMode(mode queryMode, opts spanner.QueryOptions) bool {
 	return true
 }
 
+func spaniterStatsOpts(mode queryMode, opts spanner.QueryOptions) []spaniter.Option {
+	if dmlRowCountForMode(mode, opts) {
+		return []spaniter.Option{spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact)}
+	}
+	return nil
+}
+
 func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
-	dmlRowCount := dmlRowCountForMode(mode, opts)
+	statOpts := spaniterStatsOpts(mode, opts)
 	var rs *sppb.ResultSet
 	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
-			rs, err = resultset.Materialize(tx.QueryWithOptions(ctx, stmt, opts), reductRows, dmlRowCount)
+			rs, err = resultset.Materialize(tx.QueryWithOptions(ctx, stmt, opts), reductRows, statOpts...)
 			return err
 		})
 		return rs, err
 	case single:
-		return resultset.Materialize(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows, dmlRowCount)
+		return resultset.Materialize(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows, statOpts...)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		return &sppb.ResultSet{

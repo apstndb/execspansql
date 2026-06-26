@@ -36,7 +36,7 @@ func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Cont
 	var out []any
 	_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		rowIter := tx.QueryWithOptions(ctx, spanner.Statement{SQL: sql}, spanner.QueryOptions{})
-		rs, err := resultset.Materialize(rowIter, false, true)
+		rs, err := resultset.Materialize(rowIter, false, spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact))
 		if err != nil {
 			return err
 		}
@@ -462,7 +462,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				SQL:    "UPDATE Singers SET FirstName=@name WHERE SingerId=1",
 				Params: map[string]any{"name": want},
 			}, spanner.QueryOptions{})
-			rs, err := resultset.Materialize(rowIter, false, true)
+			rs, err := resultset.Materialize(rowIter, false, spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact))
 			if err != nil {
 				return err
 			}
@@ -514,7 +514,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			rowIter := tx.QueryWithOptions(ctx, spanner.Statement{
 				SQL: "UPDATE Singers SET FirstName=FirstName WHERE SingerId=1",
 			}, spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
-			rs, err := resultset.Materialize(rowIter, false, false)
+			rs, err := resultset.Materialize(rowIter, false)
 			if err != nil {
 				return err
 			}
@@ -539,7 +539,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PROFILE.Enum()},
 		)
 
-		rs, err := resultset.Materialize(rowIter, true, false)
+		rs, err := resultset.Materialize(rowIter, true)
 		if err != nil {
 			t.Fatal(err)
 		}

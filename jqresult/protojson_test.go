@@ -6,10 +6,10 @@ import (
 	"github.com/apstndb/spaniter"
 )
 
-func TestStatsMapFromStatsEmpty(t *testing.T) {
+func TestStatsMapFromResultEmpty(t *testing.T) {
 	t.Parallel()
 
-	got, err := StatsMapFromStats(spaniter.Stats{}, false)
+	got, err := StatsMapFromResult(spaniter.RowIteratorResult{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,30 +18,17 @@ func TestStatsMapFromStatsEmpty(t *testing.T) {
 	}
 }
 
-func TestStatsMapFromStatsQueryStats(t *testing.T) {
+func TestStatsMapFromResultQueryStats(t *testing.T) {
 	t.Parallel()
 
-	got, err := StatsMapFromStats(spaniter.Stats{QueryStats: map[string]any{}}, false)
+	got, err := StatsMapFromResult(spaniter.RowIteratorResult{
+		Stats: spaniter.Stats{QueryStats: map[string]any{}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got == nil {
 		t.Fatal("stats map = nil, want empty object")
-	}
-}
-
-func TestStatsMapFromStatsDMLZeroRowCount(t *testing.T) {
-	t.Parallel()
-
-	got, err := StatsMapFromStats(spaniter.Stats{RowCount: 0}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got == nil {
-		t.Fatal("stats map = nil, want rowCountExact")
-	}
-	if got["rowCountExact"] != "0" {
-		t.Fatalf("rowCountExact = %v, want \"0\"", got["rowCountExact"])
 	}
 }
 
@@ -60,7 +47,7 @@ func TestMetadataMapFromMetadataNil(t *testing.T) {
 func TestResultSetMapFromRowIteratorNil(t *testing.T) {
 	t.Parallel()
 
-	_, err := ResultSetMapFromRowIterator(nil, false, false)
+	_, err := ResultSetMapFromRowIterator(nil, false)
 	if err == nil {
 		t.Fatal("error = nil, want nil row iterator error")
 	}

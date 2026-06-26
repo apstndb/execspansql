@@ -35,15 +35,9 @@ func MetadataMapFromMetadata(metadata *sppb.ResultSetMetadata) (map[string]any, 
 	return ProtoToMap(metadata)
 }
 
-// StatsMapFromStats returns the stats object for jq input from captured spaniter stats.
-// When dmlRowCount is true, stats use DML exact row-count encoding. PLAN mode
-// callers must pass false.
-func StatsMapFromStats(stats spaniter.Stats, dmlRowCount bool) (map[string]any, error) {
-	enc := spaniter.StatsEncodingDefault
-	if dmlRowCount {
-		enc = spaniter.StatsEncodingDMLExact
-	}
-	resultStats, err := stats.ResultSetStatsEncoded(enc)
+// StatsMapFromResult returns the stats object for jq input from captured iterator state.
+func StatsMapFromResult(result spaniter.RowIteratorResult) (map[string]any, error) {
+	resultStats, err := result.StatsProto()
 	if err != nil {
 		return nil, err
 	}
@@ -59,8 +53,8 @@ func ResultSetMap(rs *sppb.ResultSet) (map[string]any, error) {
 }
 
 // ResultSetMapFromRowIterator materializes rowIter and returns the jq input map.
-func ResultSetMapFromRowIterator(rowIter *spanner.RowIterator, redact bool, dmlRowCount bool) (map[string]any, error) {
-	rs, err := resultset.Materialize(rowIter, redact, dmlRowCount)
+func ResultSetMapFromRowIterator(rowIter *spanner.RowIterator, redact bool, opts ...spaniter.Option) (map[string]any, error) {
+	rs, err := resultset.Materialize(rowIter, redact, opts...)
 	if err != nil {
 		return nil, err
 	}

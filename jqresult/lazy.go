@@ -69,7 +69,7 @@ func (l *Lazy) drain() error {
 	}
 	var stats map[string]any
 	if drainErr == nil {
-		stats, drainErr = l.encodeCapturedStats(l.rows.Result().Stats)
+		stats, drainErr = l.statsMapFromResult(l.rows.Result())
 	}
 	l.ioMu.Unlock()
 
@@ -88,11 +88,11 @@ func (l *Lazy) drain() error {
 	return drainErr
 }
 
-func (l *Lazy) encodeCapturedStats(stats spaniter.Stats) (map[string]any, error) {
+func (l *Lazy) statsMapFromResult(result spaniter.RowIteratorResult) (map[string]any, error) {
 	if l.encodeStats != nil {
-		return l.encodeStats(stats)
+		return l.encodeStats(result.Stats)
 	}
-	return StatsMapFromStats(stats, false)
+	return StatsMapFromResult(result)
 }
 
 func (l *Lazy) ensureMetadata() error {

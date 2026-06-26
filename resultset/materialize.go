@@ -12,26 +12,26 @@ import (
 // Materialize drains rowIter and returns a protobuf ResultSet.
 // rowIter must not have been read yet; Materialize owns and stops it.
 // When redact is true, row values are omitted but metadata and stats are preserved.
-// When dmlRowCount is true, stats use ResultSetStatsForDML for standard DML row counts.
-// PLAN mode callers must pass false.
-func Materialize(rowIter *spanner.RowIterator, redact bool, dmlRowCount bool) (*sppb.ResultSet, error) {
+// Stats encoding is configured via spaniter options such as WithStatsEncoding.
+func Materialize(rowIter *spanner.RowIterator, redact bool, opts ...spaniter.Option) (*sppb.ResultSet, error) {
 	if rowIter == nil {
 		return nil, errors.New("nil row iterator")
 	}
 	if redact {
-		result, err := spaniter.DrainRowIterator(rowIter)
+		result, err := spaniter.DrainRowIterator(rowIter, opts...)
 		if err != nil {
 			return nil, err
 		}
-		return FromIteratorResult(nil, *result, dmlRowCount)
+		return FromIteratorResult(nil, *result)
 	}
 
 	var result spaniter.RowIteratorResult
-	rows, err := CollectListValues(rowIter, spaniter.WithResult(&result))
+	allOpts := append(append([]spaniter.Option(nil), opts...), spaniter.WithResult(&result))
+	rows, err := CollectListValues(rowIter, allOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return FromIteratorResult(rows, result, dmlRowCount)
+	return FromIteratorResult(rows, result)
 }
 
 // CollectListValues drains rowIter into protobuf row values.
