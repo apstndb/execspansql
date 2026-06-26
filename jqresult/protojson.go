@@ -36,8 +36,15 @@ func MetadataMapFromMetadata(metadata *sppb.ResultSetMetadata) (map[string]any, 
 }
 
 // StatsMapFromStats returns the stats object for jq input from captured spaniter stats.
-func StatsMapFromStats(stats spaniter.Stats) (map[string]any, error) {
-	resultStats, err := stats.ResultSetStats()
+// When dml is true, stats use ResultSetStatsForDML for standard DML row counts.
+func StatsMapFromStats(stats spaniter.Stats, dml bool) (map[string]any, error) {
+	var resultStats *sppb.ResultSetStats
+	var err error
+	if dml {
+		resultStats, err = stats.ResultSetStatsForDML()
+	} else {
+		resultStats, err = stats.ResultSetStats()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -53,8 +60,8 @@ func ResultSetMap(rs *sppb.ResultSet) (map[string]any, error) {
 }
 
 // ResultSetMapFromRowIterator materializes rowIter and returns the jq input map.
-func ResultSetMapFromRowIterator(rowIter *spanner.RowIterator, redact bool) (map[string]any, error) {
-	rs, err := resultset.Materialize(rowIter, redact)
+func ResultSetMapFromRowIterator(rowIter *spanner.RowIterator, redact bool, dml bool) (map[string]any, error) {
+	rs, err := resultset.Materialize(rowIter, redact, dml)
 	if err != nil {
 		return nil, err
 	}

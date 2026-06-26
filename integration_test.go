@@ -306,7 +306,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact)
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -413,7 +413,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PROFILE.Enum()},
 		)
 
-		rs, err := resultset.Materialize(rowIter, true)
+		rs, err := resultset.Materialize(rowIter, true, false)
 		if err != nil {
 			t.Fatal(err)
 		}

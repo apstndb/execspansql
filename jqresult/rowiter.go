@@ -50,10 +50,7 @@ func (r *RowIter) ensureSeq() {
 		return
 	}
 	r.seqActive = true
-	seq := spaniter.RowIteratorSeq(r.rowIter,
-		spaniter.WithResult(&r.result),
-		spaniter.WithDrainOnEarlyStop(),
-	)
+	seq := spaniter.RowIteratorSeq(r.rowIter, spaniter.WithResult(&r.result))
 	r.pull, r.stopSeq = iter.Pull2(seq)
 }
 
@@ -78,6 +75,9 @@ func (r *RowIter) primeUnlocked() error {
 	if !ok {
 		return err
 	}
+	if err != nil {
+		return err
+	}
 	r.primedRow = row
 	return nil
 }
@@ -94,6 +94,9 @@ func (r *RowIter) nextRow() (*spanner.Row, error) {
 	}
 	row, err, ok := r.pull()
 	if !ok {
+		return nil, err
+	}
+	if err != nil {
 		return nil, err
 	}
 	return row, nil
@@ -164,7 +167,6 @@ func (r *RowIter) Stop() {
 	r.stopped = true
 	if r.stopSeq != nil {
 		r.stopSeq()
-		return
 	}
 	if r.rowIter != nil {
 		r.rowIter.Stop()

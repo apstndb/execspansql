@@ -14,6 +14,7 @@ type Lazy struct {
 	ioMu sync.Mutex
 
 	redact bool
+	dml    bool
 	// encodeStats is nil in production; tests may inject a custom mapper.
 	encodeStats func(spaniter.Stats) (map[string]any, error)
 
@@ -30,8 +31,8 @@ type Lazy struct {
 }
 
 // NewLazy builds a lazy jq input. rowIter must not have been read yet; Lazy takes ownership and Stop()s it.
-func NewLazy(rowIter *spanner.RowIterator, redact bool) *Lazy {
-	l := &Lazy{redact: redact}
+func NewLazy(rowIter *spanner.RowIterator, redact bool, dml bool) *Lazy {
+	l := &Lazy{redact: redact, dml: dml}
 	l.rows = NewRowIter(rowIter, redact, RowToJSON)
 	l.rows.ioMu = &l.ioMu
 	return l
@@ -69,11 +70,7 @@ func (l *Lazy) drain() error {
 	}
 	var stats map[string]any
 	if drainErr == nil {
-		statsMap := StatsMapFromStats
-		if l.encodeStats != nil {
-			statsMap = l.encodeStats
-		}
-		stats, drainErr = statsMap(l.rows.Result().Stats)
+		stats, drainErr = l.encodeCapturedStats(l.rows.Result().Stats)
 	}
 	l.ioMu.Unlock()
 
@@ -90,6 +87,13 @@ func (l *Lazy) drain() error {
 
 	l.rows.Stop()
 	return drainErr
+}
+
+func (l *Lazy) encodeCapturedStats(stats spaniter.Stats) (map[string]any, error) {
+	if l.encodeStats != nil {
+		return l.encodeStats(stats)
+	}
+	return StatsMapFromStats(stats, l.dml)
 }
 
 func (l *Lazy) ensureMetadata() error {

@@ -11,7 +11,7 @@ func TestExecuteLazyNilRowIter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = Execute(code, InputLazy, nil, nil, false)
+	_, _, err = Execute(code, InputLazy, nil, nil, false, false)
 	if err == nil {
 		t.Fatal("expected error for nil rowIter in lazy mode")
 	}
@@ -24,7 +24,7 @@ func TestExecuteEagerNilResultSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = Execute(code, InputEager, nil, nil, false)
+	_, _, err = Execute(code, InputEager, nil, nil, false, false)
 	if err == nil {
 		t.Fatal("expected error for nil ResultSet in eager mode")
 	}

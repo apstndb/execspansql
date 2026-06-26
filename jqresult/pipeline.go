@@ -10,7 +10,8 @@ import (
 
 // Execute runs jq. For eager mode, rs must be set and rowIter is ignored.
 // For lazy mode, rowIter must be unread; cleanup releases the iterator state.
-func Execute(code *gojq.Code, mode InputMode, rowIter *spanner.RowIterator, rs *sppb.ResultSet, redactRows bool) (gojq.Iter, func(), error) {
+// When dml is true, stats encoding preserves standard DML row_count_exact:0.
+func Execute(code *gojq.Code, mode InputMode, rowIter *spanner.RowIterator, rs *sppb.ResultSet, redactRows bool, dml bool) (gojq.Iter, func(), error) {
 	switch mode {
 	case InputEager:
 		if rs == nil {
@@ -25,7 +26,7 @@ func Execute(code *gojq.Code, mode InputMode, rowIter *spanner.RowIterator, rs *
 		if rowIter == nil {
 			return nil, func() {}, fmt.Errorf("lazy mode requires an unread RowIterator")
 		}
-		lazy := NewLazy(rowIter, redactRows)
+		lazy := NewLazy(rowIter, redactRows, dml)
 		return code.Run(lazy), lazy.Stop, nil
 	default:
 		return nil, func() {}, fmt.Errorf("unknown jq input mode: %s", mode)
