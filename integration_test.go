@@ -30,17 +30,21 @@ var ddl string
 //go:embed testdata/dml.sql
 var dml string
 
-func runLazyReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Context, sql, filter string) []any {
+func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Context, sql, filter string) []any {
 	t.Helper()
 
 	var out []any
 	_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		rowIter := tx.QueryWithOptions(ctx, spanner.Statement{SQL: sql}, spanner.QueryOptions{})
-		code, err := jqresult.Compile(filter, jqresult.InputLazy)
+		rs, err := resultset.Materialize(rowIter, false, true)
 		if err != nil {
 			return err
 		}
-		iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, false, true, true)
+		code, err := jqresult.Compile(filter, jqresult.InputEager)
+		if err != nil {
+			return err
+		}
+		iter, cleanup, err := jqresult.Execute(code, jqresult.InputEager, nil, rs, false)
 		if err != nil {
 			return err
 		}
@@ -339,7 +343,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact, false, false)
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -440,7 +444,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 	})
 
-	t.Run("lazy jq readWrite DML executes when filter ignores input", func(t *testing.T) {
+	t.Run("readWrite DML uses eager jq when filter ignores input", func(t *testing.T) {
 		const want = "Revised"
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 			_, err := tx.Update(ctx, spanner.Statement{
@@ -458,11 +462,15 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				SQL:    "UPDATE Singers SET FirstName=@name WHERE SingerId=1",
 				Params: map[string]any{"name": want},
 			}, spanner.QueryOptions{})
-			code, err := jqresult.Compile("true", jqresult.InputLazy)
+			rs, err := resultset.Materialize(rowIter, false, true)
 			if err != nil {
 				return err
 			}
-			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, false, true, true)
+			code, err := jqresult.Compile("true", jqresult.InputEager)
+			if err != nil {
+				return err
+			}
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputEager, nil, rs, false)
 			if err != nil {
 				return err
 			}
@@ -491,8 +499,8 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 	})
 
-	t.Run("lazy jq readWrite DML zero rows preserves rowCountExact", func(t *testing.T) {
-		statsOut := runLazyReadWriteDML(t, client, ctx,
+	t.Run("readWrite DML zero rows preserves rowCountExact", func(t *testing.T) {
+		statsOut := runEagerReadWriteDML(t, client, ctx,
 			"UPDATE Singers SET FirstName=FirstName WHERE SingerId=-1",
 			".stats.rowCountExact",
 		)

@@ -14,7 +14,7 @@ func TestRowIterPrimePropagatesTerminalError(t *testing.T) {
 	r := &RowIter{
 		seqActive: true,
 		pull: func() (*spanner.Row, error, bool) {
-			return nil, sentinel, true
+			return nil, sentinel, false
 		},
 	}
 
@@ -31,7 +31,7 @@ func TestRowIterNextRowPropagatesTerminalError(t *testing.T) {
 		seqActive: true,
 		primed:    true,
 		pull: func() (*spanner.Row, error, bool) {
-			return nil, sentinel, true
+			return nil, sentinel, false
 		},
 	}
 

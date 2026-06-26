@@ -173,21 +173,20 @@ func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
 
-// readWriteStatFlags reports whether read-write results should encode exact DML
-// row counts and whether lazy jq must fully consume the RowIterator on cleanup.
-func readWriteStatFlags(mode queryMode, opts spanner.QueryOptions) (dmlRowCount, completeOnStop bool) {
+// dmlRowCountForMode reports whether read-write results should encode exact DML
+// row counts. PLAN mode returns false because execution does not produce a count.
+func dmlRowCountForMode(mode queryMode, opts spanner.QueryOptions) bool {
 	if _, ok := mode.(readWrite); !ok {
-		return false, false
+		return false
 	}
-	completeOnStop = true
 	if opts.Mode != nil && *opts.Mode == sppb.ExecuteSqlRequest_PLAN {
-		return false, completeOnStop
+		return false
 	}
-	return true, completeOnStop
+	return true
 }
 
 func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
-	dmlRowCount, _ := readWriteStatFlags(mode, opts)
+	dmlRowCount := dmlRowCountForMode(mode, opts)
 	var rs *sppb.ResultSet
 	switch mode := mode.(type) {
 	case readWrite:
@@ -491,7 +490,11 @@ func runJqOutput(
 	jqMode jqresult.InputMode,
 	jqCode *gojq.Code,
 ) error {
-	if jqMode == jqresult.InputEager {
+	useEager := jqMode == jqresult.InputEager
+	if _, ok := mode.(readWrite); ok {
+		useEager = true
+	}
+	if useEager {
 		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, o.RedactRows)
 		if err != nil {
 			return err
@@ -500,7 +503,7 @@ func runJqOutput(
 		if err != nil {
 			return err
 		}
-		iter, cleanup, err := jqresult.Execute(jqCode, jqMode, nil, rs, o.RedactRows, false, false)
+		iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, o.RedactRows)
 		if err != nil {
 			return err
 		}
@@ -508,33 +511,17 @@ func runJqOutput(
 		return jqresult.Print(enc, iter)
 	}
 
-	dmlRowCount, completeOnStop := readWriteStatFlags(mode, opts)
-
 	switch mode := mode.(type) {
 	case readWrite:
-		var buf bytes.Buffer
-		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-			buf.Reset()
-			enc, err := newEncoder(&buf, o.Format, o.CompactOutput, o.JqRawOutput)
-			if err != nil {
-				return err
-			}
-			return runJqOnRowIter(tx.QueryWithOptions(ctx, stmt, opts), o.RedactRows, jqMode, jqCode, enc, dmlRowCount, completeOnStop)
-		})
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(os.Stdout, &buf)
-		return err
+		panic("read-write jq uses eager materialization")
 	case single:
 		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
 		if err != nil {
 			return err
 		}
 		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
-		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc, false, false)
+		return runJqOnRowIter(rowIter, o.RedactRows, jqCode, enc)
 	case partitionedDML:
-		// Eager mode is handled above via runInNewTransaction.
 		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
 	default:
 		panic(fmt.Sprintf("unknown mode: %T", mode))
@@ -544,13 +531,10 @@ func runJqOutput(
 func runJqOnRowIter(
 	rowIter *spanner.RowIterator,
 	redactRows bool,
-	jqMode jqresult.InputMode,
 	jqCode *gojq.Code,
 	enc encoder,
-	dmlRowCount bool,
-	completeOnStop bool,
 ) error {
-	iter, cleanup, err := jqresult.Execute(jqCode, jqMode, rowIter, nil, redactRows, dmlRowCount, completeOnStop)
+	iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputLazy, rowIter, nil, redactRows)
 	if err != nil {
 		return err
 	}

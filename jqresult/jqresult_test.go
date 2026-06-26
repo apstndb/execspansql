@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spaniter"
 	"github.com/wader/gojq"
 )
@@ -112,35 +111,6 @@ func TestLazyStopDoesNotDrain(t *testing.T) {
 	l.Stop()
 	if l.drained {
 		t.Fatal("Stop() must not drain rows")
-	}
-}
-
-func TestLazyCompleteOnStopDrains(t *testing.T) {
-	t.Parallel()
-
-	var pulls int
-	r := &RowIter{
-		redact:    true,
-		seqActive: true,
-		stopSeq:   func() {},
-		pull: func() (*spanner.Row, error, bool) {
-			pulls++
-			if pulls <= 2 {
-				return &spanner.Row{}, nil, true
-			}
-			return nil, nil, false
-		},
-	}
-	l := &Lazy{
-		completeOnStop: true,
-		rows:           r,
-	}
-	l.Stop()
-	if pulls != 3 {
-		t.Fatalf("Stop() pulled %d rows, want 3", pulls)
-	}
-	if !l.drained {
-		t.Fatal("Stop() with completeOnStop must drain")
 	}
 }
 

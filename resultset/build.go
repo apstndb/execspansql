@@ -6,26 +6,17 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func statsEncoding(dmlRowCount bool) spaniter.StatsEncoding {
+	if dmlRowCount {
+		return spaniter.StatsEncodingDMLExact
+	}
+	return spaniter.StatsEncodingDefault
+}
+
 // FromIteratorResult constructs a ResultSet from materialized rows and drained
 // iterator state. rows may be nil when row values are intentionally redacted.
-// When dmlRowCount is true, stats are encoded with ResultSetStatsForDML so standard DML
-// row_count_exact:0 is preserved. PLAN mode callers must pass false.
+// When dmlRowCount is true, stats use DML exact row-count encoding. PLAN mode
+// callers must pass false.
 func FromIteratorResult(rows []*structpb.ListValue, result spaniter.RowIteratorResult, dmlRowCount bool) (*sppb.ResultSet, error) {
-	out := &sppb.ResultSet{
-		Rows:     rows,
-		Metadata: result.Metadata,
-	}
-
-	var resultStats *sppb.ResultSetStats
-	var err error
-	if dmlRowCount {
-		resultStats, err = result.Stats.ResultSetStatsForDML()
-	} else {
-		resultStats, err = result.Stats.ResultSetStats()
-	}
-	if err != nil {
-		return nil, err
-	}
-	out.Stats = resultStats
-	return out, nil
+	return result.ResultSet(rows, statsEncoding(dmlRowCount))
 }

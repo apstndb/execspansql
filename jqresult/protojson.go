@@ -36,16 +36,14 @@ func MetadataMapFromMetadata(metadata *sppb.ResultSetMetadata) (map[string]any, 
 }
 
 // StatsMapFromStats returns the stats object for jq input from captured spaniter stats.
-// When dmlRowCount is true, stats use ResultSetStatsForDML for standard DML row counts.
-// PLAN mode callers must pass false.
+// When dmlRowCount is true, stats use DML exact row-count encoding. PLAN mode
+// callers must pass false.
 func StatsMapFromStats(stats spaniter.Stats, dmlRowCount bool) (map[string]any, error) {
-	var resultStats *sppb.ResultSetStats
-	var err error
+	enc := spaniter.StatsEncodingDefault
 	if dmlRowCount {
-		resultStats, err = stats.ResultSetStatsForDML()
-	} else {
-		resultStats, err = stats.ResultSetStats()
+		enc = spaniter.StatsEncodingDMLExact
 	}
+	resultStats, err := stats.ResultSetStatsEncoded(enc)
 	if err != nil {
 		return nil, err
 	}
