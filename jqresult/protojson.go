@@ -78,7 +78,7 @@ func BuildResultSetFromParts(rows []*structpb.ListValue, metadata *sppb.ResultSe
 		Metadata: metadata,
 	}
 
-	if !stats.HasResultSetStats() {
+	if stats.IsZero() {
 		return out, nil
 	}
 
