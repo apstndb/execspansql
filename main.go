@@ -572,7 +572,7 @@ func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) 
 		if err != nil {
 			return nil, err
 		}
-		return jqresult.BuildResultSetFromParts(nil, result.Metadata, result.Stats.QueryPlan, result.Stats.QueryStats, result.Stats.RowCount)
+		return jqresult.BuildResultSetFromParts(nil, result.Metadata, result.Stats)
 	}
 
 	var result spaniter.RowIteratorResult
@@ -582,7 +582,7 @@ func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) 
 	if err != nil {
 		return nil, err
 	}
-	return jqresult.BuildResultSetFromParts(rows, result.Metadata, result.Stats.QueryPlan, result.Stats.QueryStats, result.Stats.RowCount)
+	return jqresult.BuildResultSetFromParts(rows, result.Metadata, result.Stats)
 }
 
 func rowToListValue(r *spanner.Row) *structpb.ListValue {
