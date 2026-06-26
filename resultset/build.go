@@ -8,9 +8,9 @@ import (
 
 // FromIteratorResult constructs a ResultSet from materialized rows and drained
 // iterator state. rows may be nil when row values are intentionally redacted.
-// When dml is true, stats are encoded with ResultSetStatsForDML so standard DML
-// row_count_exact:0 is preserved.
-func FromIteratorResult(rows []*structpb.ListValue, result spaniter.RowIteratorResult, dml bool) (*sppb.ResultSet, error) {
+// When dmlRowCount is true, stats are encoded with ResultSetStatsForDML so standard DML
+// row_count_exact:0 is preserved. PLAN mode callers must pass false.
+func FromIteratorResult(rows []*structpb.ListValue, result spaniter.RowIteratorResult, dmlRowCount bool) (*sppb.ResultSet, error) {
 	out := &sppb.ResultSet{
 		Rows:     rows,
 		Metadata: result.Metadata,
@@ -18,7 +18,7 @@ func FromIteratorResult(rows []*structpb.ListValue, result spaniter.RowIteratorR
 
 	var resultStats *sppb.ResultSetStats
 	var err error
-	if dml {
+	if dmlRowCount {
 		resultStats, err = result.Stats.ResultSetStatsForDML()
 	} else {
 		resultStats, err = result.Stats.ResultSetStats()

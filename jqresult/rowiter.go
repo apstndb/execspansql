@@ -167,6 +167,7 @@ func (r *RowIter) Stop() {
 	r.stopped = true
 	if r.stopSeq != nil {
 		r.stopSeq()
+		return
 	}
 	if r.rowIter != nil {
 		r.rowIter.Stop()

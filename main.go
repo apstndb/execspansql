@@ -173,21 +173,31 @@ func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
 
-func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
-	dml := false
-	if _, ok := mode.(readWrite); ok {
-		dml = true
+// readWriteStatFlags reports whether read-write results should encode exact DML
+// row counts and whether lazy jq must fully consume the RowIterator on cleanup.
+func readWriteStatFlags(mode queryMode, opts spanner.QueryOptions) (dmlRowCount, completeOnStop bool) {
+	if _, ok := mode.(readWrite); !ok {
+		return false, false
 	}
+	completeOnStop = true
+	if opts.Mode != nil && *opts.Mode == sppb.ExecuteSqlRequest_PLAN {
+		return false, completeOnStop
+	}
+	return true, completeOnStop
+}
+
+func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
+	dmlRowCount, _ := readWriteStatFlags(mode, opts)
 	var rs *sppb.ResultSet
 	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
-			rs, err = resultset.Materialize(tx.QueryWithOptions(ctx, stmt, opts), reductRows, dml)
+			rs, err = resultset.Materialize(tx.QueryWithOptions(ctx, stmt, opts), reductRows, dmlRowCount)
 			return err
 		})
 		return rs, err
 	case single:
-		return resultset.Materialize(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows, dml)
+		return resultset.Materialize(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows, dmlRowCount)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		return &sppb.ResultSet{
@@ -490,13 +500,15 @@ func runJqOutput(
 		if err != nil {
 			return err
 		}
-		iter, cleanup, err := jqresult.Execute(jqCode, jqMode, nil, rs, o.RedactRows, false)
+		iter, cleanup, err := jqresult.Execute(jqCode, jqMode, nil, rs, o.RedactRows, false, false)
 		if err != nil {
 			return err
 		}
 		defer cleanup()
 		return jqresult.Print(enc, iter)
 	}
+
+	dmlRowCount, completeOnStop := readWriteStatFlags(mode, opts)
 
 	switch mode := mode.(type) {
 	case readWrite:
@@ -507,7 +519,7 @@ func runJqOutput(
 			if err != nil {
 				return err
 			}
-			return runJqOnRowIter(tx.QueryWithOptions(ctx, stmt, opts), o.RedactRows, jqMode, jqCode, enc, true)
+			return runJqOnRowIter(tx.QueryWithOptions(ctx, stmt, opts), o.RedactRows, jqMode, jqCode, enc, dmlRowCount, completeOnStop)
 		})
 		if err != nil {
 			return err
@@ -520,7 +532,7 @@ func runJqOutput(
 			return err
 		}
 		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
-		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc, false)
+		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc, false, false)
 	case partitionedDML:
 		// Eager mode is handled above via runInNewTransaction.
 		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
@@ -535,9 +547,10 @@ func runJqOnRowIter(
 	jqMode jqresult.InputMode,
 	jqCode *gojq.Code,
 	enc encoder,
-	dml bool,
+	dmlRowCount bool,
+	completeOnStop bool,
 ) error {
-	iter, cleanup, err := jqresult.Execute(jqCode, jqMode, rowIter, nil, redactRows, dml)
+	iter, cleanup, err := jqresult.Execute(jqCode, jqMode, rowIter, nil, redactRows, dmlRowCount, completeOnStop)
 	if err != nil {
 		return err
 	}

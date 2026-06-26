@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/csv"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,6 +29,38 @@ var ddl string
 
 //go:embed testdata/dml.sql
 var dml string
+
+func runLazyReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Context, sql, filter string) []any {
+	t.Helper()
+
+	var out []any
+	_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		rowIter := tx.QueryWithOptions(ctx, spanner.Statement{SQL: sql}, spanner.QueryOptions{})
+		code, err := jqresult.Compile(filter, jqresult.InputLazy)
+		if err != nil {
+			return err
+		}
+		iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, false, true, true)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		for {
+			v, ok := iter.Next()
+			if !ok {
+				return nil
+			}
+			if err, isErr := v.(error); isErr {
+				return err
+			}
+			out = append(out, v)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
 
 func TestWithCloudSpannerEmulator(t *testing.T) {
 	ctx := context.Background()
@@ -306,7 +339,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact, false)
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, redact, false, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -404,6 +437,91 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		redactedRows := runLazy(t, ".rows[]", true, sppb.ExecuteSqlRequest_NORMAL.Enum())
 		if len(redactedRows) != 0 {
 			t.Fatalf("redacted .rows[]: got %d values, want 0", len(redactedRows))
+		}
+	})
+
+	t.Run("lazy jq readWrite DML executes when filter ignores input", func(t *testing.T) {
+		const want = "Revised"
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			_, err := tx.Update(ctx, spanner.Statement{
+				SQL:    "UPDATE Singers SET FirstName=@name WHERE SingerId=1",
+				Params: map[string]any{"name": "Before"},
+			})
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			rowIter := tx.QueryWithOptions(ctx, spanner.Statement{
+				SQL:    "UPDATE Singers SET FirstName=@name WHERE SingerId=1",
+				Params: map[string]any{"name": want},
+			}, spanner.QueryOptions{})
+			code, err := jqresult.Compile("true", jqresult.InputLazy)
+			if err != nil {
+				return err
+			}
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputLazy, rowIter, nil, false, true, true)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			for {
+				_, ok := iter.Next()
+				if !ok {
+					return nil
+				}
+			}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		row, err := client.Single().ReadRow(ctx, "Singers", spanner.Key{1}, []string{"FirstName"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got string
+		if err := row.Column(0, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("FirstName = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("lazy jq readWrite DML zero rows preserves rowCountExact", func(t *testing.T) {
+		statsOut := runLazyReadWriteDML(t, client, ctx,
+			"UPDATE Singers SET FirstName=FirstName WHERE SingerId=-1",
+			".stats.rowCountExact",
+		)
+		if len(statsOut) != 1 || statsOut[0] != "0" {
+			t.Fatalf("rowCountExact: got %v", statsOut)
+		}
+	})
+
+	t.Run("PLAN DML omits fabricated row count", func(t *testing.T) {
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			rowIter := tx.QueryWithOptions(ctx, spanner.Statement{
+				SQL: "UPDATE Singers SET FirstName=FirstName WHERE SingerId=1",
+			}, spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
+			rs, err := resultset.Materialize(rowIter, false, false)
+			if err != nil {
+				return err
+			}
+			if rs.Stats != nil {
+				if _, ok := rs.Stats.GetRowCount().(*sppb.ResultSetStats_RowCountExact); ok {
+					return fmt.Errorf("PLAN DML stats must not include rowCountExact: %v", rs.Stats)
+				}
+			}
+			if rs.Metadata == nil || rs.Metadata.GetRowType() == nil {
+				return fmt.Errorf("PLAN DML metadata missing: %#v", rs.Metadata)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	})
 
