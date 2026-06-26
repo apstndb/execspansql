@@ -3,6 +3,7 @@ package jqresult
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -62,6 +63,9 @@ func ResultSetMap(rs *sppb.ResultSet) (map[string]any, error) {
 
 // BuildResultSet constructs ResultSet stats from a consumed row iterator.
 func BuildResultSet(rows []*structpb.ListValue, rowIter *spanner.RowIterator) (*sppb.ResultSet, error) {
+	if rowIter == nil {
+		return nil, errors.New("nil row iterator")
+	}
 	return BuildResultSetFromParts(rows, rowIter.Metadata, spaniter.Stats{
 		QueryPlan:  rowIter.QueryPlan,
 		QueryStats: rowIter.QueryStats,

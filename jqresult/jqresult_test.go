@@ -74,6 +74,15 @@ func TestNormalizeForEncodeLeafSlice(t *testing.T) {
 	}
 }
 
+func TestBuildResultSetNilRowIterator(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildResultSet(nil, nil)
+	if err == nil {
+		t.Fatal("error = nil, want nil row iterator error")
+	}
+}
+
 func TestLazyRowsAfterStatsDrain(t *testing.T) {
 	t.Parallel()
 	l := &Lazy{
