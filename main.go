@@ -551,10 +551,10 @@ func runJqOnRowIter(
 }
 
 func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {
-	switch {
-	case format == "yaml":
+	switch format {
+	case "yaml":
 		return yaml.NewEncoder(writer), nil
-	case format == "json":
+	case "json":
 		jsonenc := json.NewEncoder(writer)
 		jsonenc.SetEscapeHTML(false)
 		if !compactOutput {
@@ -562,9 +562,8 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 		}
 		if rawOutput {
 			return &stringPassThroughEncoderWrapper{Writer: writer, Enc: jsonenc}, nil
-		} else {
-			return jsonenc, nil
 		}
+		return jsonenc, nil
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}

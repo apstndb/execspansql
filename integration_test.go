@@ -75,7 +75,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		spanemuboost.WithSetupRawDMLs(gsqlsep.SeparateInputString(dml)),
 	)
 	if err != nil {
-		return
+		t.Fatal(err)
 	}
 	defer env.Close() //nolint:errcheck
 
