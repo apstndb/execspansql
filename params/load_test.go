@@ -104,6 +104,14 @@ func TestLoadParamFile(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("expected empty map for empty file, got %v", got)
 	}
+
+	nullPath := filepath.Join(dir, "params-null.yaml")
+	if err := os.WriteFile(nullPath, []byte("x: null\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadParamFile(nullPath); err == nil {
+		t.Fatal("expected error for untyped null in param file")
+	}
 }
 
 func TestMergeParams(t *testing.T) {

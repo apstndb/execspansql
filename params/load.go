@@ -56,12 +56,9 @@ func LoadParamFile(path string) (map[string]string, error) {
 	}
 	out := make(map[string]string, len(raw))
 	for k, v := range raw {
-		if v == nil {
-			continue
-		}
 		s, err := paramFileValueToString(v)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parameter %q: %w", k, err)
 		}
 		out[k] = s
 	}
@@ -70,6 +67,8 @@ func LoadParamFile(path string) (map[string]string, error) {
 
 func paramFileValueToString(v any) (string, error) {
 	switch x := v.(type) {
+	case nil:
+		return "", fmt.Errorf("untyped null values are not supported; use a typed null expression like 'CAST(NULL AS TYPE)' or a type name (PLAN mode only)")
 	case string:
 		return x, nil
 	case json.Number:
