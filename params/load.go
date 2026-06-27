@@ -13,6 +13,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ParseParamFlags parses repeated --param name:value flags.
+func ParseParamFlags(ss []string) (map[string]string, error) {
+	if len(ss) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(ss))
+	for _, s := range ss {
+		name, value, ok := strings.Cut(s, ":")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("invalid --param %q: expected name:value", s)
+		}
+		out[name] = value
+	}
+	return out, nil
+}
+
 // LoadParamFile loads param name→literal/type strings from a YAML or JSON file.
 func LoadParamFile(path string) (map[string]string, error) {
 	if path == "" {
