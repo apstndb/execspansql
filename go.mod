@@ -9,7 +9,7 @@ require (
 	github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.0.0-20241212215948-d4eb945c8f10
-	github.com/apstndb/spaniter v0.2.0
+	github.com/apstndb/spaniter v0.3.0
 	github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb
 	github.com/apstndb/spanvalue v0.8.0
 	github.com/cloudspannerecosystem/memefish v0.6.2
@@ -120,5 +120,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250728155136-f173205681a0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250728155136-f173205681a0 // indirect
 )
-
-replace github.com/apstndb/spaniter => ../spaniter
