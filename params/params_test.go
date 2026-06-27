@@ -87,9 +87,7 @@ func TestGenerateParams(t *testing.T) {
 							},
 						}},
 					},
-					Value: structpb.NewListValue(&structpb.ListValue{
-						Values: []*structpb.Value{structpb.NewNullValue()},
-					}),
+					Value: structpb.NewNullValue(),
 				},
 				"string_array_type": spanner.GenericColumnValue{
 					Type: &sppb.Type{

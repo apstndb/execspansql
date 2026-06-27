@@ -37,6 +37,7 @@ Application Options:
   -r, --raw-output                             (--raw-output of jq)
       --filter-file=                           (--from-file of jq)
       --param=                                 [name]:[Cloud Spanner type(PLAN only) or literal]
+      --param-file=                            YAML or JSON file of query parameters
       --log-grpc                               Show gRPC logs
       --experimental-trace-project=
       --enable-partitioned-dml                 Execute DML statement using Partitioned DML
@@ -78,7 +79,7 @@ There are examples omitting some required options.
 Many Cloud Spanner clients don't support parameter.
 Without modifications, query which have parameters are impossible to execute and query whose parameters' types are `STRUCT` or `ARRAY` are impossible to show query plans.
 
-execspansql supports query parameters.
+execspansql supports query parameters via repeated `--param name:value` flags or a `--param-file` (YAML or JSON). When both are given, `--param` overrides entries from the file.
 
 #### PLAN with complex typed parameters
 
@@ -93,6 +94,22 @@ $ execspansql ${DATABASE_ID} --query-mode=PLAN \
 $ execspansql ${DATABASE_ID} --query-mode=PLAN \
               --sql='SELECT @str.*' \
               --param='str:STRUCT<FirstName STRING, LastName STRING>'
+```
+
+#### Parameters from a file
+
+`--param-file` accepts YAML or JSON (`.json` extension selects JSON; otherwise YAML). Values are the same type/literal strings used with `--param`.
+
+```yaml
+# params.yaml
+arr: ARRAY<STRING>
+names: '[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
+```
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE \
+              --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
+              --param-file=params.yaml
 ```
 
 #### PROFILE with complex typed parameterized values 

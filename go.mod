@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/spanner v1.84.1
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.24.0
-	github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4
+	github.com/alecthomas/kong v1.15.0
 	github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a
 	github.com/apstndb/memebridge v0.6.0
 	github.com/apstndb/spanemuboost v0.4.6
@@ -15,7 +15,6 @@ require (
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
-	github.com/jessevdk/go-flags v1.6.1
 	github.com/samber/lo v1.53.0
 	github.com/wader/gojq v0.12.1-0.20260315123642-6d8c75fc0e74
 	go.opentelemetry.io/otel v1.41.0
