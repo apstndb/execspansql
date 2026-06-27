@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apstndb/memebridge/cliparams"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,9 +21,12 @@ func ParseParamFlags(ss []string) (map[string]string, error) {
 	}
 	out := make(map[string]string, len(ss))
 	for _, s := range ss {
-		name, value, ok := strings.Cut(s, ":")
-		if !ok || name == "" {
-			return nil, fmt.Errorf("invalid --param %q: expected name:value", s)
+		name, value, err := cliparams.SplitAssignment(s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --param %q: %w", s, err)
+		}
+		if name == "" {
+			return nil, fmt.Errorf("invalid --param %q: empty parameter name", s)
 		}
 		out[name] = value
 	}
