@@ -81,12 +81,18 @@ func paramFileValueToString(v any) (string, error) {
 		return "FALSE", nil
 	case float64:
 		s := fmt.Sprintf("%g", x)
+		if s == "NaN" || s == "+Inf" || s == "-Inf" {
+			return s, nil
+		}
 		if !strings.ContainsAny(s, ".eE") {
 			s += ".0"
 		}
 		return s, nil
 	case float32:
 		s := fmt.Sprintf("%g", x)
+		if s == "NaN" || s == "+Inf" || s == "-Inf" {
+			return s, nil
+		}
 		if !strings.ContainsAny(s, ".eE") {
 			s += ".0"
 		}
