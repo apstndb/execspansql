@@ -38,6 +38,9 @@ func LoadParamFile(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(bytes.TrimSpace(b)) == 0 {
+		return nil, nil
+	}
 	var raw map[string]any
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":

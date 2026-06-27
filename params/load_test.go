@@ -92,6 +92,18 @@ func TestLoadParamFile(t *testing.T) {
 	if _, err := LoadParamFile(nestedPath); err == nil {
 		t.Fatal("expected error for nested array in param file")
 	}
+
+	emptyPath := filepath.Join(dir, "params-empty.yaml")
+	if err := os.WriteFile(emptyPath, []byte("   \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LoadParamFile(emptyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty map for empty file, got %v", got)
+	}
 }
 
 func TestMergeParams(t *testing.T) {
