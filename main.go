@@ -110,7 +110,22 @@ func processFlags() (o opts, err error) {
 	if err != nil {
 		return o, err
 	}
-	_, err = parser.Parse(os.Args[1:])
+	var ctx *kong.Context
+	defer func() {
+		if err == nil {
+			return
+		}
+		fmt.Fprintln(os.Stderr, "error:", err)
+		if ctx != nil {
+			_ = ctx.PrintUsage(false)
+			return
+		}
+		var parseErr *kong.ParseError
+		if errors.As(err, &parseErr) && parseErr.Context != nil {
+			_ = parseErr.Context.PrintUsage(false)
+		}
+	}()
+	ctx, err = parser.Parse(os.Args[1:])
 	if err != nil {
 		return o, err
 	}
