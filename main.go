@@ -31,12 +31,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/alecthomas/kong"
 	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/resultset"
 	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
-	"github.com/jessevdk/go-flags"
 	"github.com/wader/gojq"
 )
 
@@ -61,80 +61,82 @@ func init() {
 }
 
 type opts struct {
-	Positional struct {
-		Database string `positional-arg-name:"database" description:"(required) ID of the database." required:"true"`
-	} `positional-args:"yes"`
-	Sql                  string            `long:"sql" description:"SQL query text; exclusive with --sql-file."`
-	SqlFile              string            `long:"sql-file" description:"File name contains SQL query; exclusive with --sql"`
-	Project              string            `long:"project" short:"p" description:"(required) ID of the project." required:"true" env:"CLOUDSDK_CORE_PROJECT"`
-	Instance             string            `long:"instance" short:"i" description:"(required) ID of the instance." required:"true" env:"CLOUDSDK_SPANNER_INSTANCE"`
-	QueryMode            string            `long:"query-mode" description:"Query mode." default:"NORMAL" choice:"NORMAL" choice:"PLAN" choice:"PROFILE" choice:"WITH_STATS" choice:"WITH_PLAN_AND_STATS"`
-	Format               string            `long:"format" description:"Output format." default:"json" choice:"json" choice:"yaml" choice:"experimental_csv"`
-	RedactRows           bool              `long:"redact-rows" description:"Redact result rows from output"`
-	CompactOutput        bool              `long:"compact-output" short:"c" description:"Compact JSON output(--compact-output of jq)"`
-	JqFilter             string            `long:"filter" description:"jq filter"`
-	JqRawOutput          bool              `long:"raw-output" short:"r" description:"(--raw-output of jq)"`
-	JqFromFile           string            `long:"filter-file" description:"(--from-file of jq)"`
-	JqInputMode          string            `long:"jq-input-mode" description:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)." default:"eager" choice:"eager" choice:"lazy"`
-	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
-	ParamFile            string            `long:"param-file" description:"YAML or JSON file of query parameters (name to type/literal string)"`
-	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
-	TraceProject         string            `long:"experimental-trace-project"`
-	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
-	Timeout              time.Duration     `long:"timeout" default:"10m" description:"Maximum time to wait for the SQL query to complete"`
-	TryPartitionQuery    bool              `long:"try-partition-query" description:"(Experimental) Check whether the query can be executed as partition query or not"`
+	Database             string        `arg:"" required:"" help:"ID of the database."`
+	Sql                  string        `name:"sql" xor:"sql" required:"" help:"SQL query text; exclusive with --sql-file."`
+	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
+	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
+	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
+	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
+	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
+	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
+	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
+	JqFilter             string        `name:"filter" xor:"filter" help:"jq filter"`
+	JqRawOutput          bool          `name:"raw-output" short:"r" help:"(--raw-output of jq)"`
+	JqFromFile           string        `name:"filter-file" xor:"filter" help:"(--from-file of jq)"`
+	JqInputMode          string        `name:"jq-input-mode" enum:"eager,lazy" default:"eager" help:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)."`
+	ParamFlags           []string      `name:"param" help:"[name]:[Cloud Spanner type (PLAN only) or literal]"`
+	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
+	LogGrpc              bool          `name:"log-grpc" help:"Show gRPC logs"`
+	TraceProject         string        `name:"experimental-trace-project" help:"Export traces to Cloud Trace in the given project."`
+	EnablePartitionedDML bool          `name:"enable-partitioned-dml" help:"Execute DML statement using Partitioned DML"`
+	Timeout              time.Duration `name:"timeout" default:"10m" help:"Maximum time to wait for the SQL query to complete"`
+	TryPartitionQuery    bool          `name:"try-partition-query" help:"(Experimental) Check whether the query can be executed as partition query or not"`
 	TimestampBound       struct {
-		Strong        bool   `long:"strong" description:"Perform a strong query."`
-		ReadTimestamp string `long:"read-timestamp" description:"Perform a query at the given timestamp. (micro-seconds precision)" value-name:"TIMESTAMP"`
-	} `group:"Timestamp Bound"`
+		Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
+		ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
+	} `embed:"" prefix:"" group:"Timestamp Bound"`
 }
 
 func (o opts) mergedParams() (map[string]string, error) {
+	cliParams, err := params.ParseParamFlags(o.ParamFlags)
+	if err != nil {
+		return nil, err
+	}
 	if o.ParamFile == "" {
-		return o.Param, nil
+		return cliParams, nil
 	}
 	fileParams, err := params.LoadParamFile(o.ParamFile)
 	if err != nil {
 		return nil, err
 	}
-	return params.MergeParams(fileParams, o.Param), nil
+	return params.MergeParams(fileParams, cliParams), nil
 }
 
 func processFlags() (o opts, err error) {
-	flagParser := flags.NewParser(&o, flags.Default)
-	defer func() {
-		if err == nil {
-			return
-		}
-		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
-			return
-		}
-		log.Print(err)
-		flagParser.WriteHelp(os.Stderr)
-	}()
-	_, err = flagParser.Parse()
+	parser, err := kong.New(&o,
+		kong.Name("execspansql"),
+		kong.Description("Yet another gcloud spanner databases execute-sql replacement"),
+		kong.ExplicitGroups([]kong.Group{
+			{Key: "Timestamp Bound", Title: "Timestamp Bound"},
+		}),
+	)
 	if err != nil {
 		return o, err
 	}
-
-	if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); o.TimestampBound.ReadTimestamp != "" && err != nil {
-		return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
+	defer func() {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+		}
+	}()
+	ctx, err := parser.Parse(os.Args[1:])
+	if err != nil {
+		var parseErr *kong.ParseError
+		if errors.As(err, &parseErr) {
+			ctx = parseErr.Context
+		}
+		if ctx != nil {
+			prev := parser.Stdout
+			parser.Stdout = os.Stderr
+			_ = ctx.PrintUsage(false)
+			parser.Stdout = prev
+		}
+		return o, err
 	}
 
-	if o.TimestampBound.Strong && o.TimestampBound.ReadTimestamp != "" {
-		return o, errors.New("--strong and --read-timestamp are exclusive")
-	}
-
-	if o.Sql != "" && o.SqlFile != "" {
-		return o, errors.New("--sql and --sql-file are exclusive")
-	}
-
-	if o.Sql == "" && o.SqlFile == "" {
-		return o, errors.New("--sql or --sql-file is required")
-	}
-
-	if o.JqFilter != "" && o.JqFromFile != "" {
-		return o, errors.New("--jq-filter and --jq-from-file are exclusive")
+	if o.TimestampBound.ReadTimestamp != "" {
+		if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); err != nil {
+			return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
+		}
 	}
 
 	if _, err := jqresult.ParseInputMode(o.JqInputMode); err != nil {
@@ -316,7 +318,7 @@ func _main() error {
 
 	logGrpc := o.LogGrpc
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Positional.Database, logGrpc, doTrace)
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, logGrpc, doTrace)
 	if err != nil {
 		return err
 	}
