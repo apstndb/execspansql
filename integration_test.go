@@ -70,16 +70,16 @@ func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Cont
 func TestWithCloudSpannerEmulator(t *testing.T) {
 	ctx := context.Background()
 
-	_, clients, teardown, err := spanemuboost.NewEmulatorWithClients(ctx,
+	env, err := spanemuboost.RunEmulatorWithClients(ctx,
 		spanemuboost.WithSetupDDLs(gsqlsep.SeparateInputString(ddl)),
 		spanemuboost.WithSetupRawDMLs(gsqlsep.SeparateInputString(dml)),
 	)
 	if err != nil {
-		return
+		t.Fatal(err)
 	}
-	defer teardown()
+	defer env.Close() //nolint:errcheck
 
-	client := clients.Client
+	client := env.Client
 
 	t.Run("PLAN with generateParams", func(t *testing.T) {
 		paramStrMap := map[string]string{
@@ -121,7 +121,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		rowIter := clients.Client.Single().QueryWithOptions(ctx,
+		rowIter := env.Client.Single().QueryWithOptions(ctx,
 			spanner.Statement{SQL: "SELECT @i64, @f32, @f64, @s, @bs, @bl, @dt, @ts, @n, @a_str, @a_s, @j", Params: params},
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
 
