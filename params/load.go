@@ -63,23 +63,9 @@ func paramFileValueToString(v any) (string, error) {
 		}
 		return "FALSE", nil
 	case float64:
-		s := fmt.Sprintf("%g", x)
-		if s == "NaN" || s == "+Inf" || s == "-Inf" {
-			return s, nil
-		}
-		if !strings.ContainsAny(s, ".eE") {
-			s += ".0"
-		}
-		return s, nil
+		return formatParamFloat(x), nil
 	case float32:
-		s := fmt.Sprintf("%g", x)
-		if s == "NaN" || s == "+Inf" || s == "-Inf" {
-			return s, nil
-		}
-		if !strings.ContainsAny(s, ".eE") {
-			s += ".0"
-		}
-		return s, nil
+		return formatParamFloat(float64(x)), nil
 	case time.Time:
 		return fmt.Sprintf("TIMESTAMP %q", x.Format(time.RFC3339Nano)), nil
 	case []any, map[string]any, map[any]any:
@@ -89,9 +75,26 @@ func paramFileValueToString(v any) (string, error) {
 	}
 }
 
+func formatParamFloat(x float64) string {
+	s := fmt.Sprintf("%g", x)
+	if s == "NaN" || s == "+Inf" || s == "-Inf" {
+		return s
+	}
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	return s
+}
+
 // MergeParams returns file params with cli params overriding on name conflict.
 func MergeParams(file, cli map[string]string) map[string]string {
-	out := make(map[string]string)
+	if len(file) == 0 {
+		return cli
+	}
+	if len(cli) == 0 {
+		return file
+	}
+	out := make(map[string]string, len(file)+len(cli))
 	maps.Copy(out, file)
 	maps.Copy(out, cli)
 	return out

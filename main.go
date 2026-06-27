@@ -90,6 +90,9 @@ type opts struct {
 }
 
 func (o opts) mergedParams() (map[string]string, error) {
+	if o.ParamFile == "" {
+		return o.Param, nil
+	}
 	fileParams, err := params.LoadParamFile(o.ParamFile)
 	if err != nil {
 		return nil, err
