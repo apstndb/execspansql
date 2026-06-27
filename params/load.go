@@ -14,23 +14,40 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ParseParamFlags parses repeated --param name:value flags.
+const (
+	paramFlagSeparator       = "="
+	legacyParamFlagSeparator = ":"
+)
+
+// ParseParamFlags parses repeated --param flags as name=value (preferred) or
+// legacy name:value assignments.
 func ParseParamFlags(ss []string) (map[string]string, error) {
 	if len(ss) == 0 {
 		return nil, nil
 	}
 	out := make(map[string]string, len(ss))
 	for _, s := range ss {
-		name, value, err := cliparams.SplitAssignment(s)
+		name, value, err := splitParamFlag(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid --param %q: %w", s, err)
-		}
-		if name == "" {
-			return nil, fmt.Errorf("invalid --param %q: empty parameter name", s)
 		}
 		out[name] = value
 	}
 	return out, nil
+}
+
+func splitParamFlag(s string) (name, value string, err error) {
+	eqIdx := strings.Index(s, paramFlagSeparator)
+	colonIdx := strings.Index(s, legacyParamFlagSeparator)
+
+	switch {
+	case eqIdx >= 0 && (colonIdx < 0 || eqIdx < colonIdx):
+		return cliparams.SplitAssignment(s, cliparams.WithSeparator(paramFlagSeparator))
+	case colonIdx >= 0:
+		return cliparams.SplitAssignment(s, cliparams.WithSeparator(legacyParamFlagSeparator))
+	default:
+		return "", "", fmt.Errorf("expected name=value or name:value")
+	}
 }
 
 // LoadParamFile loads param name→literal/type strings from a YAML or JSON file.

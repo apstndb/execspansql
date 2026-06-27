@@ -74,7 +74,7 @@ type opts struct {
 	JqRawOutput          bool          `name:"raw-output" short:"r" help:"(--raw-output of jq)"`
 	JqFromFile           string        `name:"filter-file" xor:"filter" help:"(--from-file of jq)"`
 	JqInputMode          string        `name:"jq-input-mode" enum:"eager,lazy" default:"eager" help:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)."`
-	ParamFlags           []string      `name:"param" help:"[name]:[Cloud Spanner type (PLAN only) or literal]"`
+	ParamFlags           []string      `name:"param" help:"[name]=[type or literal]; legacy [name]:[...] also accepted"`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
 	LogGrpc              bool          `name:"log-grpc" help:"Show gRPC logs"`
 	TraceProject         string        `name:"experimental-trace-project" help:"Export traces to Cloud Trace in the given project."`

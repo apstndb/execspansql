@@ -36,7 +36,7 @@ Application Options:
       --filter=                                jq filter
   -r, --raw-output                             (--raw-output of jq)
       --filter-file=                           (--from-file of jq)
-      --param=                                 [name]:[Cloud Spanner type(PLAN only) or literal]
+      --param=                                 [name]=[Cloud Spanner type(PLAN only) or literal]; legacy name:value OK
       --param-file=                            YAML or JSON file of query parameters
       --log-grpc                               Show gRPC logs
       --experimental-trace-project=
@@ -79,7 +79,7 @@ There are examples omitting some required options.
 Many Cloud Spanner clients don't support parameter.
 Without modifications, query which have parameters are impossible to execute and query whose parameters' types are `STRUCT` or `ARRAY` are impossible to show query plans.
 
-execspansql supports query parameters via repeated `--param name:value` flags or a `--param-file` (YAML or JSON). When both are given, `--param` overrides entries from the file.
+execspansql supports query parameters via repeated `--param name=value` flags (legacy `name:value` is also accepted) or a `--param-file` (YAML or JSON). When both are given, `--param` overrides entries from the file.
 
 #### PLAN with complex typed parameters
 
@@ -88,12 +88,12 @@ You can use type syntax to plan a query.
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PLAN \
               --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
-              --param='arr:ARRAY<STRUCT<STRING>>'
+              --param='arr=ARRAY<STRUCT<STRING>>'
 ```
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PLAN \
               --sql='SELECT @str.*' \
-              --param='str:STRUCT<FirstName STRING, LastName STRING>'
+              --param='str=STRUCT<FirstName STRING, LastName STRING>'
 ```
 
 #### Parameters from a file
@@ -121,12 +121,12 @@ Note: It only emulates literals and doesn't emulate coercion.
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PROFILE \
               --sql='SELECT * FROM UNNEST(@arr) WITH OFFSET' \
-              --param='arr:[STRUCT<pk INT64, col STRING>(1, "foo"), (42, "foobar")]'
+              --param='arr=[STRUCT<pk INT64, col STRING>(1, "foo"), (42, "foobar")]'
 ```
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PROFILE \
               --sql='SELECT * FROM Singers WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@names)' \
-              --param='names:[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
+              --param='names=[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
 ```
 
 ### Embedded jq
@@ -208,7 +208,7 @@ Predicates:
 $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
     --sql='SELECT SingerId FROM SINGERS
            WHERE (FirstName, LastName) = @singerinfo' \
-    --param='singerinfo:STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell")'
+    --param='singerinfo=STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell")'
 ```
 
 [Querying data with a STRUCT object](https://cloud.google.com/spanner/docs/structs?hl=en#querying_data_with_an_array_of_struct_objects))
@@ -218,7 +218,7 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
     --sql='SELECT SingerId FROM SINGERS
            WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName)
            IN UNNEST(@names)' \
-    --param='names:[STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell"), ("Hannah", "Harris")]'
+    --param='names=[STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell"), ("Hannah", "Harris")]'
 ```
 
 
@@ -229,14 +229,14 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
     --sql='SELECT SingerId
            FROM Singers
            WHERE FirstName = @name.FirstName' \
-    --param='name:STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell")'
+    --param='name=STRUCT<FirstName STRING, LastName STRING>("Elena", "Campbell")'
 ```
 ```
 $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
     --sql='SELECT SingerId, @songinfo.SongName
            FROM Singers
            WHERE STRUCT<FirstName STRING, LastName STRING>(FirstName, LastName) IN UNNEST(@songinfo.ArtistNames)' \
-     --param='songinfo:STRUCT<SongName STRING, ArtistNames ARRAY<STRUCT<FirstName STRING, LastName STRING>>>("Imagination", [("Elena", "Campbell"), ("Hannah", "Harris")])'
+     --param='songinfo=STRUCT<SongName STRING, ArtistNames ARRAY<STRUCT<FirstName STRING, LastName STRING>>>("Imagination", [("Elena", "Campbell"), ("Hannah", "Harris")])'
 ```
 
 ### (Experimental) Cloud Trace integration
