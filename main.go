@@ -62,8 +62,8 @@ func init() {
 
 type opts struct {
 	Database             string        `arg:"" required:"" help:"ID of the database."`
-	Sql                  string        `name:"sql" xor:"sql" help:"SQL query text; exclusive with --sql-file."`
-	SqlFile              string        `name:"sql-file" xor:"sql" help:"File name contains SQL query; exclusive with --sql"`
+	Sql                  string        `name:"sql" xor:"sql" required:"" help:"SQL query text; exclusive with --sql-file."`
+	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
 	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
 	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
@@ -106,38 +106,37 @@ func processFlags() (o opts, err error) {
 	parser, err := kong.New(&o,
 		kong.Name("execspansql"),
 		kong.Description("Yet another gcloud spanner databases execute-sql replacement"),
+		kong.ExplicitGroups([]kong.Group{
+			{Key: "Timestamp Bound", Title: "Timestamp Bound"},
+		}),
 	)
 	if err != nil {
 		return o, err
 	}
-	var ctx *kong.Context
 	defer func() {
-		if err == nil {
-			return
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
 		}
-		fmt.Fprintln(os.Stderr, "error:", err)
+	}()
+	ctx, err := parser.Parse(os.Args[1:])
+	if err != nil {
+		var parseErr *kong.ParseError
+		if errors.As(err, &parseErr) {
+			ctx = parseErr.Context
+		}
 		if ctx != nil {
 			prev := parser.Stdout
 			parser.Stdout = os.Stderr
 			_ = ctx.PrintUsage(false)
 			parser.Stdout = prev
 		}
-	}()
-	ctx, err = parser.Parse(os.Args[1:])
-	if err != nil {
-		var parseErr *kong.ParseError
-		if errors.As(err, &parseErr) {
-			ctx = parseErr.Context
-		}
 		return o, err
 	}
 
-	if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); o.TimestampBound.ReadTimestamp != "" && err != nil {
-		return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
-	}
-
-	if o.Sql == "" && o.SqlFile == "" {
-		return o, errors.New("--sql or --sql-file is required")
+	if o.TimestampBound.ReadTimestamp != "" {
+		if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); err != nil {
+			return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
+		}
 	}
 
 	if _, err := jqresult.ParseInputMode(o.JqInputMode); err != nil {
