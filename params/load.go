@@ -1,0 +1,59 @@
+package params
+
+import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// ParseParamFlags parses repeated --param name:value flags.
+func ParseParamFlags(ss []string) (map[string]string, error) {
+	if len(ss) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(ss))
+	for _, s := range ss {
+		name, value, ok := strings.Cut(s, ":")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("invalid --param %q: expected name:value", s)
+		}
+		out[name] = value
+	}
+	return out, nil
+}
+
+// LoadParamFile loads param name→literal/type strings from a YAML or JSON file.
+func LoadParamFile(path string) (map[string]string, error) {
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string)
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".json":
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, fmt.Errorf("parse param file as JSON: %w", err)
+		}
+	default:
+		if err := yaml.Unmarshal(b, &out); err != nil {
+			return nil, fmt.Errorf("parse param file as YAML: %w", err)
+		}
+	}
+	return out, nil
+}
+
+// MergeParams returns file params with cli params overriding on name conflict.
+func MergeParams(file, cli map[string]string) map[string]string {
+	out := make(map[string]string)
+	maps.Copy(out, file)
+	maps.Copy(out, cli)
+	return out
+}

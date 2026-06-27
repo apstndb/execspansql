@@ -77,6 +77,7 @@ type opts struct {
 	JqFromFile           string            `long:"filter-file" description:"(--from-file of jq)"`
 	JqInputMode          string            `long:"jq-input-mode" description:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)." default:"eager" choice:"eager" choice:"lazy"`
 	Param                map[string]string `long:"param" description:"[name]:[Cloud Spanner type(PLAN only) or literal]"`
+	ParamFile            string            `long:"param-file" description:"YAML or JSON file of query parameters (name to type/literal string)"`
 	LogGrpc              bool              `long:"log-grpc" description:"Show gRPC logs"`
 	TraceProject         string            `long:"experimental-trace-project"`
 	EnablePartitionedDML bool              `long:"enable-partitioned-dml" description:"Execute DML statement using Partitioned DML"`
@@ -86,6 +87,14 @@ type opts struct {
 		Strong        bool   `long:"strong" description:"Perform a strong query."`
 		ReadTimestamp string `long:"read-timestamp" description:"Perform a query at the given timestamp. (micro-seconds precision)" value-name:"TIMESTAMP"`
 	} `group:"Timestamp Bound"`
+}
+
+func (o opts) mergedParams() (map[string]string, error) {
+	fileParams, err := params.LoadParamFile(o.ParamFile)
+	if err != nil {
+		return nil, err
+	}
+	return params.MergeParams(fileParams, o.Param), nil
 }
 
 func processFlags() (o opts, err error) {
@@ -310,7 +319,11 @@ func _main() error {
 	}
 	defer client.Close()
 
-	paramMap, err := params.GenerateParams(o.Param, mode == sppb.ExecuteSqlRequest_PLAN)
+	paramStrMap, err := o.mergedParams()
+	if err != nil {
+		return err
+	}
+	paramMap, err := params.GenerateParams(paramStrMap, mode == sppb.ExecuteSqlRequest_PLAN)
 	if err != nil {
 		return err
 	}
