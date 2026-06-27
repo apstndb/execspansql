@@ -79,6 +79,14 @@ func TestLoadParamFile(t *testing.T) {
 	if got["id"] != "1234567890123456789" {
 		t.Fatalf("got id=%q, want exact integer string", got["id"])
 	}
+
+	nestedPath := filepath.Join(dir, "params-nested.yaml")
+	if err := os.WriteFile(nestedPath, []byte("arr: [1, 2]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadParamFile(nestedPath); err == nil {
+		t.Fatal("expected error for nested array in param file")
+	}
 }
 
 func TestMergeParams(t *testing.T) {

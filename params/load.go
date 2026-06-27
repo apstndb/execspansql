@@ -1,6 +1,7 @@
 package params
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -39,7 +40,7 @@ func LoadParamFile(path string) (map[string]string, error) {
 	var raw map[string]any
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":
-		dec := json.NewDecoder(strings.NewReader(string(b)))
+		dec := json.NewDecoder(bytes.NewReader(b))
 		dec.UseNumber()
 		if err := dec.Decode(&raw); err != nil {
 			return nil, fmt.Errorf("parse param file as JSON: %w", err)
@@ -74,6 +75,8 @@ func paramFileValueToString(v any) (string, error) {
 			return "TRUE", nil
 		}
 		return "FALSE", nil
+	case []any, map[string]any, map[any]any:
+		return "", fmt.Errorf("arrays and maps must be specified as string literals (e.g., '[1, 2, 3]'), got %T", v)
 	default:
 		return fmt.Sprintf("%v", x), nil
 	}
