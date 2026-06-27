@@ -56,14 +56,19 @@ func TestLoadParamFile(t *testing.T) {
 	}
 
 	yamlScalarsPath := filepath.Join(dir, "params-scalars.yaml")
-	if err := os.WriteFile(yamlScalarsPath, []byte("id: 123\nenabled: true\n"), 0o644); err != nil {
+	if err := os.WriteFile(yamlScalarsPath, []byte("id: 123\nenabled: true\nprice: 1.0\ncreated_at: 2023-01-01T00:00:00Z\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, err = LoadParamFile(yamlScalarsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantScalars := map[string]string{"id": "123", "enabled": "TRUE"}
+	wantScalars := map[string]string{
+		"id":         "123",
+		"enabled":    "TRUE",
+		"price":      "1.0",
+		"created_at": `TIMESTAMP "2023-01-01T00:00:00Z"`,
+	}
 	if diff := cmp.Diff(wantScalars, got); diff != "" {
 		t.Fatalf("(-want +got)\n%s", diff)
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -75,6 +76,20 @@ func paramFileValueToString(v any) (string, error) {
 			return "TRUE", nil
 		}
 		return "FALSE", nil
+	case float64:
+		s := fmt.Sprintf("%g", x)
+		if !strings.ContainsAny(s, ".eE") {
+			s += ".0"
+		}
+		return s, nil
+	case float32:
+		s := fmt.Sprintf("%g", x)
+		if !strings.ContainsAny(s, ".eE") {
+			s += ".0"
+		}
+		return s, nil
+	case time.Time:
+		return fmt.Sprintf("TIMESTAMP %q", x.Format(time.RFC3339Nano)), nil
 	case []any, map[string]any, map[any]any:
 		return "", fmt.Errorf("arrays and maps must be specified as string literals (e.g., '[1, 2, 3]'), got %T", v)
 	default:
