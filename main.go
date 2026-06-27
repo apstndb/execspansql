@@ -118,15 +118,14 @@ func processFlags() (o opts, err error) {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		if ctx != nil {
 			_ = ctx.PrintUsage(false)
-			return
-		}
-		var parseErr *kong.ParseError
-		if errors.As(err, &parseErr) && parseErr.Context != nil {
-			_ = parseErr.Context.PrintUsage(false)
 		}
 	}()
 	ctx, err = parser.Parse(os.Args[1:])
 	if err != nil {
+		var parseErr *kong.ParseError
+		if errors.As(err, &parseErr) {
+			ctx = parseErr.Context
+		}
 		return o, err
 	}
 
