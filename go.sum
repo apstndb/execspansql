@@ -650,8 +650,6 @@ github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kd
 github.com/apache/arrow/go/v10 v10.0.1/go.mod h1:YvhnlEePVnBS4+0z3fhPfUy7W1Ikj0Ih0vcRo/gZ1M0=
 github.com/apache/arrow/go/v11 v11.0.0/go.mod h1:Eg5OsL5H+e299f7u5ssuXsuHQVEGC4xei5aX110hRiI=
 github.com/apache/thrift v0.16.0/go.mod h1:PHK3hniurgQaNMZYaCLEqXKsYK8upmhPbmdP2FXSqgU=
-github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4 h1:WfWmn7N+kNxe5YYh1Uoy/FG2CzPpuxCkYQPovjxrDSk=
-github.com/apstndb/go-spannulls v0.0.0-20241108213137-ec54277850d4/go.mod h1:4Z/Xh/qZ1KSd0VDUI9n+c4fJqtscegWOOt4MAz14SWQ=
 github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a h1:9rutREITQVQSkSt2uoRr8ap6JA+k5i7NL1zRmJe621g=
 github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a/go.mod h1:NQogaK8AOkyzXEXMqGvc6hV0SKO8cUkcqqXJimyvTlw=
 github.com/apstndb/memebridge v0.6.0 h1:45uu/RFF63u5vJ+d8HT4PvOfotm1cV4eEveWFwGvElI=

@@ -1,16 +1,17 @@
 package params
 
 import (
-	"cloud.google.com/go/spanner"
 	"fmt"
+
+	"cloud.google.com/go/spanner"
 	"github.com/apstndb/execspansql/internal"
-	"github.com/apstndb/go-spannulls"
 	"github.com/apstndb/memebridge"
+	"github.com/apstndb/spanvalue/gcvctor"
 	"github.com/cloudspannerecosystem/memefish"
 	"github.com/cloudspannerecosystem/memefish/ast"
 )
 
-// generateParams returns map for spanner.Statement.Params.
+// GenerateParams returns map for spanner.Statement.Params.
 // All values of map are spanner.GenericColumnValue.
 func GenerateParams(ss map[string]string, permitType bool) (map[string]interface{}, error) {
 	return internal.TryMapMap(ss, func(k, v string) (interface{}, error) {
@@ -56,5 +57,5 @@ func astTypeToGenericColumnValue(t ast.Type) (spanner.GenericColumnValue, error)
 	if err != nil {
 		return spanner.GenericColumnValue{}, err
 	}
-	return spannulls.NullGenericColumnValueFromType(typ), nil
+	return gcvctor.NullOf(typ), nil
 }
