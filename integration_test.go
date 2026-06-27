@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/csv"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -20,6 +21,7 @@ import (
 
 	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/params"
+	"github.com/apstndb/execspansql/resultset"
 )
 
 //go:embed testdata/ddl.sql
@@ -27,6 +29,43 @@ var ddl string
 
 //go:embed testdata/dml.sql
 var dml string
+
+func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Context, sql, filter string) []any {
+	t.Helper()
+
+	var out []any
+	_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		out = nil
+		rowIter := tx.QueryWithOptions(ctx, spanner.Statement{SQL: sql}, spanner.QueryOptions{})
+		rs, err := resultset.Materialize(rowIter, false, spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact))
+		if err != nil {
+			return err
+		}
+		code, err := jqresult.Compile(filter, jqresult.InputEager)
+		if err != nil {
+			return err
+		}
+		iter, cleanup, err := jqresult.Execute(code, jqresult.InputEager, nil, rs, false)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		for {
+			v, ok := iter.Next()
+			if !ok {
+				return nil
+			}
+			if err, isErr := v.(error); isErr {
+				return err
+			}
+			out = append(out, v)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
 
 func TestWithCloudSpannerEmulator(t *testing.T) {
 	ctx := context.Background()
@@ -406,13 +445,102 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		}
 	})
 
+	t.Run("readWrite DML uses eager jq when filter ignores input", func(t *testing.T) {
+		const want = "Revised"
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			_, err := tx.Update(ctx, spanner.Statement{
+				SQL:    "UPDATE Singers SET FirstName=@name WHERE SingerId=1",
+				Params: map[string]any{"name": "Before"},
+			})
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			rowIter := tx.QueryWithOptions(ctx, spanner.Statement{
+				SQL:    "UPDATE Singers SET FirstName=@name WHERE SingerId=1",
+				Params: map[string]any{"name": want},
+			}, spanner.QueryOptions{})
+			rs, err := resultset.Materialize(rowIter, false, spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact))
+			if err != nil {
+				return err
+			}
+			code, err := jqresult.Compile("true", jqresult.InputEager)
+			if err != nil {
+				return err
+			}
+			iter, cleanup, err := jqresult.Execute(code, jqresult.InputEager, nil, rs, false)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			for {
+				_, ok := iter.Next()
+				if !ok {
+					return nil
+				}
+			}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		row, err := client.Single().ReadRow(ctx, "Singers", spanner.Key{1}, []string{"FirstName"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got string
+		if err := row.Column(0, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("FirstName = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("readWrite DML zero rows preserves rowCountExact", func(t *testing.T) {
+		statsOut := runEagerReadWriteDML(t, client, ctx,
+			"UPDATE Singers SET FirstName=FirstName WHERE SingerId=-1",
+			".stats.rowCountExact",
+		)
+		if len(statsOut) != 1 || statsOut[0] != "0" {
+			t.Fatalf("rowCountExact: got %v", statsOut)
+		}
+	})
+
+	t.Run("PLAN DML omits fabricated row count", func(t *testing.T) {
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			rowIter := tx.QueryWithOptions(ctx, spanner.Statement{
+				SQL: "UPDATE Singers SET FirstName=FirstName WHERE SingerId=1",
+			}, spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PLAN.Enum()})
+			rs, err := resultset.Materialize(rowIter, false)
+			if err != nil {
+				return err
+			}
+			if rs.Stats != nil {
+				if _, ok := rs.Stats.GetRowCount().(*sppb.ResultSetStats_RowCountExact); ok {
+					return fmt.Errorf("PLAN DML stats must not include rowCountExact: %v", rs.Stats)
+				}
+			}
+			if rs.Metadata == nil || rs.Metadata.GetRowType() == nil {
+				return fmt.Errorf("PLAN DML metadata missing: %#v", rs.Metadata)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("eager PROFILE redact rows preserves stats", func(t *testing.T) {
 		rowIter := client.Single().QueryWithOptions(ctx,
 			spanner.Statement{SQL: "SELECT SingerId FROM Singers ORDER BY SingerId LIMIT 3"},
 			spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_PROFILE.Enum()},
 		)
 
-		rs, err := consumeRowIterIntoResultSet(rowIter, true)
+		rs, err := resultset.Materialize(rowIter, true)
 		if err != nil {
 			t.Fatal(err)
 		}

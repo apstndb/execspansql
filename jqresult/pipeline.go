@@ -10,6 +10,8 @@ import (
 
 // Execute runs jq. For eager mode, rs must be set and rowIter is ignored.
 // For lazy mode, rowIter must be unread; cleanup releases the iterator state.
+// Lazy mode is intended for read-only queries; read-write callers should
+// materialize first and use eager mode.
 func Execute(code *gojq.Code, mode InputMode, rowIter *spanner.RowIterator, rs *sppb.ResultSet, redactRows bool) (gojq.Iter, func(), error) {
 	switch mode {
 	case InputEager:
@@ -25,7 +27,7 @@ func Execute(code *gojq.Code, mode InputMode, rowIter *spanner.RowIterator, rs *
 		if rowIter == nil {
 			return nil, func() {}, fmt.Errorf("lazy mode requires an unread RowIterator")
 		}
-		lazy := NewLazy(rowIter, redactRows, StatsFuncFromProto())
+		lazy := NewLazy(rowIter, redactRows)
 		return code.Run(lazy), lazy.Stop, nil
 	default:
 		return nil, func() {}, fmt.Errorf("unknown jq input mode: %s", mode)

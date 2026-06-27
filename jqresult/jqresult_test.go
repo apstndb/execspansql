@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spaniter"
 	"github.com/wader/gojq"
 )
 
@@ -74,15 +74,6 @@ func TestNormalizeForEncodeLeafSlice(t *testing.T) {
 	}
 }
 
-func TestBuildResultSetNilRowIterator(t *testing.T) {
-	t.Parallel()
-
-	_, err := BuildResultSet(nil, nil)
-	if err == nil {
-		t.Fatal("error = nil, want nil row iterator error")
-	}
-}
-
 func TestLazyRowsAfterStatsDrain(t *testing.T) {
 	t.Parallel()
 	l := &Lazy{
@@ -128,7 +119,7 @@ func TestDrainAppendsStreamedRows(t *testing.T) {
 	l := &Lazy{
 		materializedRows: []any{[]any{int64(1)}},
 		rows:             &RowIter{stopped: true},
-		statsFn: func(*spanner.RowIterator) (map[string]any, error) {
+		encodeStats: func(spaniter.Stats) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		},
 	}

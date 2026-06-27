@@ -4,27 +4,18 @@ import (
 	"sync"
 
 	"cloud.google.com/go/spanner"
+	"github.com/apstndb/spaniter"
 	"github.com/wader/gojq"
 )
-
-// StatsFunc builds the stats object after all rows have been read from rowIter.
-type StatsFunc func(rowIter *spanner.RowIterator) (map[string]any, error)
-
-// StatsFuncFromProto is a StatsFunc that uses BuildResultSet with nil rows (iterator already drained).
-func StatsFuncFromProto() StatsFunc {
-	return func(rowIter *spanner.RowIterator) (map[string]any, error) {
-		return StatsMap(rowIter, nil)
-	}
-}
 
 // Lazy is a JQValue root for a Spanner query result. Accessing stats drains rows; rows streams via gojq.Iter.
 type Lazy struct {
 	mu   sync.Mutex
 	ioMu sync.Mutex
 
-	rowIter *spanner.RowIterator
-	redact  bool
-	statsFn StatsFunc
+	redact bool
+	// encodeStats is nil in production; tests may inject a custom mapper.
+	encodeStats func(spaniter.Stats) (map[string]any, error)
 
 	metadata         map[string]any
 	metadataReady    bool
@@ -32,19 +23,15 @@ type Lazy struct {
 	stats            map[string]any
 	rows             *RowIter
 	materializedRows []any
-	rowsStreamDone bool
+	rowsStreamDone   bool
 
 	drained  bool
 	drainErr error
 }
 
 // NewLazy builds a lazy jq input. rowIter must not have been read yet; Lazy takes ownership and Stop()s it.
-func NewLazy(rowIter *spanner.RowIterator, redact bool, statsFn StatsFunc) *Lazy {
-	l := &Lazy{
-		rowIter: rowIter,
-		redact:  redact,
-		statsFn: statsFn,
-	}
+func NewLazy(rowIter *spanner.RowIterator, redact bool) *Lazy {
+	l := &Lazy{redact: redact}
 	l.rows = NewRowIter(rowIter, redact, RowToJSON)
 	l.rows.ioMu = &l.ioMu
 	return l
@@ -81,8 +68,8 @@ func (l *Lazy) drain() error {
 		materializedRows = append(cachedRows, remaining...)
 	}
 	var stats map[string]any
-	if drainErr == nil && l.statsFn != nil {
-		stats, drainErr = l.statsFn(l.rowIter)
+	if drainErr == nil {
+		stats, drainErr = l.statsMapFromResult(l.rows.Result())
 	}
 	l.ioMu.Unlock()
 
@@ -99,6 +86,13 @@ func (l *Lazy) drain() error {
 
 	l.rows.Stop()
 	return drainErr
+}
+
+func (l *Lazy) statsMapFromResult(result spaniter.RowIteratorResult) (map[string]any, error) {
+	if l.encodeStats != nil {
+		return l.encodeStats(result.Stats)
+	}
+	return StatsMapFromResult(result)
 }
 
 func (l *Lazy) ensureMetadata() error {
@@ -128,7 +122,7 @@ func (l *Lazy) ensureMetadata() error {
 		l.ioMu.Unlock()
 		return err
 	}
-	m, err := MetadataMap(l.rowIter)
+	m, err := MetadataMapFromMetadata(l.rows.Result().Metadata)
 	l.ioMu.Unlock()
 
 	l.mu.Lock()

@@ -1,20 +1,24 @@
 package jqresult
 
 import (
-	"errors"
 	"sync"
 
 	"cloud.google.com/go/spanner"
-	"google.golang.org/api/iterator"
+	"github.com/apstndb/spaniter"
 )
 
 // RowIter streams query rows as jq-compatible values ([]any per row, matching protojson ResultSet rows).
 type RowIter struct {
 	ioMu      *sync.Mutex
-	iter      *spanner.RowIterator
+	rowIter   *spanner.RowIterator
 	redact    bool
 	rowToJSON func(*spanner.Row) (any, error)
 	stopped   bool
+
+	result    spaniter.RowIteratorResult
+	pull      func() (*spanner.Row, error, bool)
+	stopSeq   func()
+	seqActive bool
 
 	primedRow *spanner.Row
 	primed    bool
@@ -24,7 +28,12 @@ func NewRowIter(rowIter *spanner.RowIterator, redact bool, rowToJSON func(*spann
 	if rowToJSON == nil {
 		rowToJSON = RowToJSON
 	}
-	return &RowIter{iter: rowIter, redact: redact, rowToJSON: rowToJSON}
+	return &RowIter{rowIter: rowIter, redact: redact, rowToJSON: rowToJSON}
+}
+
+// Result returns lifecycle data captured by spaniter while rows are consumed.
+func (r *RowIter) Result() spaniter.RowIteratorResult {
+	return r.result
 }
 
 func (r *RowIter) lockIO() func() {
@@ -35,7 +44,15 @@ func (r *RowIter) lockIO() func() {
 	return r.ioMu.Unlock
 }
 
-// Prime reads the first row (or iterator.Done) so rowIter.Metadata is populated.
+func (r *RowIter) ensureSeq() {
+	if r.seqActive || r.stopped || r.rowIter == nil {
+		return
+	}
+	r.seqActive = true
+	r.pull, r.stopSeq = spaniter.PullRowIteratorSeq(r.rowIter, spaniter.WithResult(&r.result))
+}
+
+// Prime reads the first row (or iterator.Done) so metadata is populated.
 // The first row is buffered for the next Next call when present.
 func (r *RowIter) Prime() error {
 	unlock := r.lockIO()
@@ -48,11 +65,12 @@ func (r *RowIter) primeUnlocked() error {
 		return nil
 	}
 	r.primed = true
-	row, err := r.iter.Next()
-	if errors.Is(err, iterator.Done) {
+	r.ensureSeq()
+	if r.pull == nil {
 		return nil
 	}
-	if err != nil {
+	row, err, ok := r.pull()
+	if !ok {
 		return err
 	}
 	r.primedRow = row
@@ -65,7 +83,15 @@ func (r *RowIter) nextRow() (*spanner.Row, error) {
 		r.primedRow = nil
 		return row, nil
 	}
-	return r.iter.Next()
+	r.ensureSeq()
+	if r.pull == nil {
+		return nil, nil
+	}
+	row, err, ok := r.pull()
+	if !ok {
+		return nil, err
+	}
+	return row, nil
 }
 
 func (r *RowIter) Next() (any, bool) {
@@ -79,7 +105,7 @@ func (r *RowIter) nextUnlocked() (any, bool) {
 		return nil, false
 	}
 	row, err := r.nextRow()
-	if errors.Is(err, iterator.Done) {
+	if row == nil && err == nil {
 		return nil, false
 	}
 	if err != nil {
@@ -106,7 +132,7 @@ func (r *RowIter) drainUnlocked() ([]any, error) {
 	var rows []any
 	for {
 		row, err := r.nextRow()
-		if errors.Is(err, iterator.Done) {
+		if row == nil && err == nil {
 			return rows, nil
 		}
 		if err != nil {
@@ -131,5 +157,11 @@ func (r *RowIter) Stop() {
 		return
 	}
 	r.stopped = true
-	r.iter.Stop()
+	if r.stopSeq != nil {
+		r.stopSeq()
+		return
+	}
+	if r.rowIter != nil {
+		r.rowIter.Stop()
+	}
 }

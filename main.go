@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/apstndb/execspansql/internal"
 	"github.com/apstndb/execspansql/params"
 	"io"
 	"regexp"
-	"slices"
-	"spheric.cloud/xiter"
 	"time"
 
 	"fmt"
@@ -35,12 +32,12 @@ import (
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/execspansql/jqresult"
+	"github.com/apstndb/execspansql/resultset"
 	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/jessevdk/go-flags"
 	"github.com/wader/gojq"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func main() {
@@ -177,17 +174,37 @@ func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
 
+// dmlRowCountForMode reports whether read-write results should encode exact DML
+// row counts. PLAN mode returns false because execution does not produce a count.
+func dmlRowCountForMode(mode queryMode, opts spanner.QueryOptions) bool {
+	if _, ok := mode.(readWrite); !ok {
+		return false
+	}
+	if opts.Mode != nil && *opts.Mode == sppb.ExecuteSqlRequest_PLAN {
+		return false
+	}
+	return true
+}
+
+func spaniterStatsOpts(mode queryMode, opts spanner.QueryOptions) []spaniter.Option {
+	if dmlRowCountForMode(mode, opts) {
+		return []spaniter.Option{spaniter.WithStatsEncoding(spaniter.StatsEncodingDMLExact)}
+	}
+	return nil
+}
+
 func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, reductRows bool) (*sppb.ResultSet, error) {
+	statOpts := spaniterStatsOpts(mode, opts)
 	var rs *sppb.ResultSet
 	switch mode := mode.(type) {
 	case readWrite:
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) (err error) {
-			rs, err = consumeRowIterIntoResultSet(tx.QueryWithOptions(ctx, stmt, opts), reductRows)
+			rs, err = resultset.Materialize(tx.QueryWithOptions(ctx, stmt, opts), reductRows, statOpts...)
 			return err
 		})
 		return rs, err
 	case single:
-		return consumeRowIterIntoResultSet(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows)
+		return resultset.Materialize(client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts), reductRows, statOpts...)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		return &sppb.ResultSet{
@@ -481,7 +498,11 @@ func runJqOutput(
 	jqMode jqresult.InputMode,
 	jqCode *gojq.Code,
 ) error {
-	if jqMode == jqresult.InputEager {
+	useEager := jqMode == jqresult.InputEager
+	if _, ok := mode.(readWrite); ok {
+		useEager = true
+	}
+	if useEager {
 		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, o.RedactRows)
 		if err != nil {
 			return err
@@ -490,7 +511,7 @@ func runJqOutput(
 		if err != nil {
 			return err
 		}
-		iter, cleanup, err := jqresult.Execute(jqCode, jqMode, nil, rs, o.RedactRows)
+		iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, o.RedactRows)
 		if err != nil {
 			return err
 		}
@@ -500,29 +521,15 @@ func runJqOutput(
 
 	switch mode := mode.(type) {
 	case readWrite:
-		var buf bytes.Buffer
-		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-			buf.Reset()
-			enc, err := newEncoder(&buf, o.Format, o.CompactOutput, o.JqRawOutput)
-			if err != nil {
-				return err
-			}
-			return runJqOnRowIter(tx.QueryWithOptions(ctx, stmt, opts), o.RedactRows, jqMode, jqCode, enc)
-		})
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(os.Stdout, &buf)
-		return err
+		panic("read-write jq uses eager materialization")
 	case single:
 		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
 		if err != nil {
 			return err
 		}
 		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
-		return runJqOnRowIter(rowIter, o.RedactRows, jqMode, jqCode, enc)
+		return runJqOnRowIter(rowIter, o.RedactRows, jqCode, enc)
 	case partitionedDML:
-		// Eager mode is handled above via runInNewTransaction.
 		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
 	default:
 		panic(fmt.Sprintf("unknown mode: %T", mode))
@@ -532,11 +539,10 @@ func runJqOutput(
 func runJqOnRowIter(
 	rowIter *spanner.RowIterator,
 	redactRows bool,
-	jqMode jqresult.InputMode,
 	jqCode *gojq.Code,
 	enc encoder,
 ) error {
-	iter, cleanup, err := jqresult.Execute(jqCode, jqMode, rowIter, nil, redactRows)
+	iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputLazy, rowIter, nil, redactRows)
 	if err != nil {
 		return err
 	}
@@ -562,33 +568,4 @@ func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput b
 	default:
 		return nil, fmt.Errorf("unknown format: %s", format)
 	}
-}
-
-// consumeRowIterIntoResultSet construct *spannerpb.ResultSet using *spanner.RowIterator.
-// rowIter must be passed without calling any method, and it will be closed by this function.
-func consumeRowIterIntoResultSet(rowIter *spanner.RowIterator, redactRows bool) (*sppb.ResultSet, error) {
-	if redactRows {
-		result, err := spaniter.DrainRowIterator(rowIter)
-		if err != nil {
-			return nil, err
-		}
-		return jqresult.BuildResultSetFromParts(nil, result.Metadata, result.Stats)
-	}
-
-	var result spaniter.RowIteratorResult
-	rows, err := consumeRowIterIntoListValues(rowIter,
-		spaniter.WithResult(&result),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return jqresult.BuildResultSetFromParts(rows, result.Metadata, result.Stats)
-}
-
-func rowToListValue(r *spanner.Row) *structpb.ListValue {
-	return &structpb.ListValue{Values: slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))}
-}
-
-func consumeRowIterIntoListValues(rowIter *spanner.RowIterator, opts ...spaniter.Option) ([]*structpb.ListValue, error) {
-	return xiter.TryCollect(internal.MapNonError(spaniter.RowIteratorSeq(rowIter, opts...), rowToListValue))
 }
