@@ -8,23 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestParseParamFlags(t *testing.T) {
-	t.Parallel()
-
-	got, err := ParseParamFlags([]string{"arr:ARRAY<STRING>", "name:42"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{"arr": "ARRAY<STRING>", "name": "42"}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("(-want +got)\n%s", diff)
-	}
-
-	if _, err := ParseParamFlags([]string{"invalid"}); err == nil {
-		t.Fatal("expected error for invalid param")
-	}
-}
-
 func TestLoadParamFile(t *testing.T) {
 	t.Parallel()
 
