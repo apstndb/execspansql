@@ -62,17 +62,17 @@ func init() {
 
 type opts struct {
 	Database             string        `arg:"" required:"" help:"ID of the database."`
-	Sql                  string        `name:"sql" help:"SQL query text; exclusive with --sql-file."`
-	SqlFile              string        `name:"sql-file" help:"File name contains SQL query; exclusive with --sql"`
+	Sql                  string        `name:"sql" xor:"sql" help:"SQL query text; exclusive with --sql-file."`
+	SqlFile              string        `name:"sql-file" xor:"sql" help:"File name contains SQL query; exclusive with --sql"`
 	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
 	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
 	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
-	JqFilter             string        `name:"filter" help:"jq filter"`
+	JqFilter             string        `name:"filter" xor:"filter" help:"jq filter"`
 	JqRawOutput          bool          `name:"raw-output" short:"r" help:"(--raw-output of jq)"`
-	JqFromFile           string        `name:"filter-file" help:"(--from-file of jq)"`
+	JqFromFile           string        `name:"filter-file" xor:"filter" help:"(--from-file of jq)"`
 	JqInputMode          string        `name:"jq-input-mode" enum:"eager,lazy" default:"eager" help:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)."`
 	ParamFlags           []string      `name:"param" help:"[name]:[Cloud Spanner type (PLAN only) or literal]"`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
@@ -82,9 +82,9 @@ type opts struct {
 	Timeout              time.Duration `name:"timeout" default:"10m" help:"Maximum time to wait for the SQL query to complete"`
 	TryPartitionQuery    bool          `name:"try-partition-query" help:"(Experimental) Check whether the query can be executed as partition query or not"`
 	TimestampBound       struct {
-		Strong        bool   `name:"strong" help:"Perform a strong query."`
-		ReadTimestamp string `name:"read-timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
-	} `embed:"" prefix:""`
+		Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
+		ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
+	} `embed:"" prefix:"" group:"Timestamp Bound"`
 }
 
 func (o opts) mergedParams() (map[string]string, error) {
@@ -117,7 +117,10 @@ func processFlags() (o opts, err error) {
 		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		if ctx != nil {
+			prev := parser.Stdout
+			parser.Stdout = os.Stderr
 			_ = ctx.PrintUsage(false)
+			parser.Stdout = prev
 		}
 	}()
 	ctx, err = parser.Parse(os.Args[1:])
@@ -133,20 +136,8 @@ func processFlags() (o opts, err error) {
 		return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
 	}
 
-	if o.TimestampBound.Strong && o.TimestampBound.ReadTimestamp != "" {
-		return o, errors.New("--strong and --read-timestamp are exclusive")
-	}
-
-	if o.Sql != "" && o.SqlFile != "" {
-		return o, errors.New("--sql and --sql-file are exclusive")
-	}
-
 	if o.Sql == "" && o.SqlFile == "" {
 		return o, errors.New("--sql or --sql-file is required")
-	}
-
-	if o.JqFilter != "" && o.JqFromFile != "" {
-		return o, errors.New("--filter and --filter-file are exclusive")
 	}
 
 	if _, err := jqresult.ParseInputMode(o.JqInputMode); err != nil {
