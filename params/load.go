@@ -36,18 +36,47 @@ func LoadParamFile(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string)
+	var raw map[string]any
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":
-		if err := json.Unmarshal(b, &out); err != nil {
+		dec := json.NewDecoder(strings.NewReader(string(b)))
+		dec.UseNumber()
+		if err := dec.Decode(&raw); err != nil {
 			return nil, fmt.Errorf("parse param file as JSON: %w", err)
 		}
 	default:
-		if err := yaml.Unmarshal(b, &out); err != nil {
+		if err := yaml.Unmarshal(b, &raw); err != nil {
 			return nil, fmt.Errorf("parse param file as YAML: %w", err)
 		}
 	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		if v == nil {
+			continue
+		}
+		s, err := paramFileValueToString(v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = s
+	}
 	return out, nil
+}
+
+func paramFileValueToString(v any) (string, error) {
+	switch x := v.(type) {
+	case string:
+		return x, nil
+	case json.Number:
+		return x.String(), nil
+	case bool:
+		if x {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	default:
+		return fmt.Sprintf("%v", x), nil
+	}
 }
 
 // MergeParams returns file params with cli params overriding on name conflict.

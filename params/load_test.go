@@ -54,6 +54,31 @@ func TestLoadParamFile(t *testing.T) {
 	if diff := cmp.Diff(map[string]string{"arr": "ARRAY<STRING>"}, got); diff != "" {
 		t.Fatalf("(-want +got)\n%s", diff)
 	}
+
+	yamlScalarsPath := filepath.Join(dir, "params-scalars.yaml")
+	if err := os.WriteFile(yamlScalarsPath, []byte("id: 123\nenabled: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LoadParamFile(yamlScalarsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantScalars := map[string]string{"id": "123", "enabled": "TRUE"}
+	if diff := cmp.Diff(wantScalars, got); diff != "" {
+		t.Fatalf("(-want +got)\n%s", diff)
+	}
+
+	jsonLargeIntPath := filepath.Join(dir, "params-large-int.json")
+	if err := os.WriteFile(jsonLargeIntPath, []byte(`{"id":1234567890123456789}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LoadParamFile(jsonLargeIntPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["id"] != "1234567890123456789" {
+		t.Fatalf("got id=%q, want exact integer string", got["id"])
+	}
 }
 
 func TestMergeParams(t *testing.T) {
