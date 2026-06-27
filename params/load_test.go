@@ -23,6 +23,10 @@ func TestParseParamFlags(t *testing.T) {
 	if _, err := ParseParamFlags([]string{"invalid"}); err == nil {
 		t.Fatal("expected error for invalid param")
 	}
+
+	if _, err := ParseParamFlags([]string{":value"}); err == nil {
+		t.Fatal("expected error for empty parameter name")
+	}
 }
 
 func TestLoadParamFile(t *testing.T) {

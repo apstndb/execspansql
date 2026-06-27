@@ -25,6 +25,9 @@ func ParseParamFlags(ss []string) (map[string]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid --param %q: %w", s, err)
 		}
+		if name == "" {
+			return nil, fmt.Errorf("invalid --param %q: empty parameter name", s)
+		}
 		out[name] = value
 	}
 	return out, nil
