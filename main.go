@@ -359,13 +359,13 @@ func _main() error {
 			return err
 		}
 		defer bt.Close()
+		defer func() { bt.Cleanup(ctx) }()
 
 		_, err = bt.PartitionQuery(ctx, stmt, spanner.PartitionOptions{})
 		if err != nil {
 			return err
 		}
 
-		bt.Cleanup(ctx)
 		fmt.Println("success")
 		return nil
 	}
