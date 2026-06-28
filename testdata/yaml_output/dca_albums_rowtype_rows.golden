@@ -1,27 +1,27 @@
 rowType:
     fields:
-        - name: SingerId
-          type:
-            code: INT64
-        - name: AlbumId
-          type:
-            code: INT64
-        - name: AlbumTitle
-          type:
-            code: STRING
-        - name: MarketingBudget
-          type:
-            code: INT64
+    - name: SingerId
+      type:
+          code: INT64
+    - name: AlbumId
+      type:
+          code: INT64
+    - name: AlbumTitle
+      type:
+          code: STRING
+    - name: MarketingBudget
+      type:
+          code: INT64
 rows:
-    - - "2"
-      - "5"
-      - Trackfringe
-      - "916353"
-    - - "3"
-      - "17"
-      - Tigergeode
-      - "540557"
-    - - "4"
-      - "26"
-      - Thieftime
-      - "926938"
+- - "2"
+  - "5"
+  - Trackfringe
+  - "916353"
+- - "3"
+  - "17"
+  - Tigergeode
+  - "540557"
+- - "4"
+  - "26"
+  - Thieftime
+  - "926938"

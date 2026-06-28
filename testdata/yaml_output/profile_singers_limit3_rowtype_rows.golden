@@ -1,15 +1,15 @@
 rowType:
     fields:
-        - name: SingerId
-          type:
-            code: INT64
-        - name: FirstName
-          type:
-            code: STRING
+    - name: SingerId
+      type:
+          code: INT64
+    - name: FirstName
+      type:
+          code: STRING
 rows:
-    - - "1"
-      - Marc
-    - - "2"
-      - Catalina
-    - - "3"
-      - Alice
+- - "1"
+  - Marc
+- - "2"
+  - Catalina
+- - "3"
+  - Alice

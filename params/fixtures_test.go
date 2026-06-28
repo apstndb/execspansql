@@ -62,6 +62,13 @@ func TestLoadParamFileFixtures(t *testing.T) {
 				"created_at": `TIMESTAMP "2023-01-01T00:00:00Z"`,
 			},
 		},
+		{
+			file: "testdata/quoted_timestamp.yaml",
+			want: map[string]string{
+				"quoted_ts": "2023-01-01T00:00:00Z",
+				"plain_ts":  `TIMESTAMP "2023-01-01T00:00:00Z"`,
+			},
+		},
 	}
 
 	for _, tc := range tests {

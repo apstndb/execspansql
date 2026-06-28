@@ -1,96 +1,96 @@
 metadata:
     rowType:
         fields:
-            - name: i64
-              type:
-                code: INT64
-            - name: s
-              type:
-                code: STRING
-            - name: bl
-              type:
-                code: BOOL
+        - name: i64
+          type:
+              code: INT64
+        - name: s
+          type:
+              code: STRING
+        - name: bl
+          type:
+              code: BOOL
     transaction:
         readTimestamp: "2026-06-28T15:55:36.515883Z"
     undeclaredParameters: {}
 rows:
-    - - "1"
-      - hello
-      - true
+- - "1"
+  - hello
+  - true
 stats:
     queryPlan:
         planNodes:
-            - childLinks:
-                - childIndex: "1"
-                - childIndex: "3"
-                - childIndex: "4"
-                - childIndex: "5"
-              displayName: Serialize Result
-              executionStats:
-                cpu_time:
-                    total: "0.01"
-                    unit: msecs
-                execution_summary:
-                    execution_end_timestamp: "1782662136.516507"
-                    execution_start_timestamp: "1782662136.516479"
-                    num_executions: "1"
-                latency:
-                    total: "0.01"
-                    unit: msecs
-                rows:
-                    total: "1"
-                    unit: rows
-              kind: RELATIONAL
-              metadata:
-                execution_method: Row
-            - childLinks:
-                - childIndex: "2"
-              displayName: Unit Relation
-              executionStats:
-                cpu_time:
-                    total: "0"
-                    unit: msecs
-                execution_summary:
-                    num_executions: "1"
-                latency:
-                    total: "0"
-                    unit: msecs
-                rows:
-                    total: "1"
-                    unit: rows
-              index: "1"
-              kind: RELATIONAL
-              metadata:
-                execution_method: Row
-            - displayName: Constant
-              index: "2"
-              kind: SCALAR
-              shortRepresentation:
-                description: "1"
-            - displayName: Parameter
-              index: "3"
-              kind: SCALAR
-              metadata:
-                name: i64
-                type: scalar
-              shortRepresentation:
-                description: '@i64'
-            - displayName: Parameter
-              index: "4"
-              kind: SCALAR
-              metadata:
-                name: s
-                type: scalar
-              shortRepresentation:
-                description: '@s'
-            - displayName: Parameter
-              index: "5"
-              kind: SCALAR
-              metadata:
-                name: bl
-                type: scalar
-              shortRepresentation:
-                description: '@bl'
+        - childLinks:
+          - childIndex: "1"
+          - childIndex: "3"
+          - childIndex: "4"
+          - childIndex: "5"
+          displayName: Serialize Result
+          executionStats:
+              cpu_time:
+                  total: "0.01"
+                  unit: msecs
+              execution_summary:
+                  execution_end_timestamp: "1782662136.516507"
+                  execution_start_timestamp: "1782662136.516479"
+                  num_executions: "1"
+              latency:
+                  total: "0.01"
+                  unit: msecs
+              rows:
+                  total: "1"
+                  unit: rows
+          kind: RELATIONAL
+          metadata:
+              execution_method: Row
+        - childLinks:
+          - childIndex: "2"
+          displayName: Unit Relation
+          executionStats:
+              cpu_time:
+                  total: "0"
+                  unit: msecs
+              execution_summary:
+                  num_executions: "1"
+              latency:
+                  total: "0"
+                  unit: msecs
+              rows:
+                  total: "1"
+                  unit: rows
+          index: "1"
+          kind: RELATIONAL
+          metadata:
+              execution_method: Row
+        - displayName: Constant
+          index: "2"
+          kind: SCALAR
+          shortRepresentation:
+              description: "1"
+        - displayName: Parameter
+          index: "3"
+          kind: SCALAR
+          metadata:
+              name: i64
+              type: scalar
+          shortRepresentation:
+              description: "@i64"
+        - displayName: Parameter
+          index: "4"
+          kind: SCALAR
+          metadata:
+              name: s
+              type: scalar
+          shortRepresentation:
+              description: "@s"
+        - displayName: Parameter
+          index: "5"
+          kind: SCALAR
+          metadata:
+              name: bl
+              type: scalar
+          shortRepresentation:
+              description: "@bl"
     queryStats:
         bytes_returned: "17"
         cpu_time: 0.36 msecs
