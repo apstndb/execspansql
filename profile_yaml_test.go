@@ -64,6 +64,7 @@ func profileYAMLGoldenCases() []profileYAMLGoldenCase {
 
 func TestProfileJSONToYamlGolden(t *testing.T) {
 	for _, tc := range profileYAMLGoldenCases() {
+		tc := tc
 		t.Run(tc.golden, func(t *testing.T) {
 			rs, err := loadProfileJSONFixture(tc.jsonFile)
 			if err != nil {

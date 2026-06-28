@@ -40,6 +40,7 @@ func encodeResultSetYAML(filter string, rs *sppb.ResultSet) ([]byte, error) {
 
 func TestYamlOutputGolden(t *testing.T) {
 	for name, tc := range yamlGoldenCases() {
+		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			goldenPath := filepath.Join("testdata", "yaml_output", name+".golden")
 
