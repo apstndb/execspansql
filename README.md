@@ -242,7 +242,9 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
 
 ### (Experimental) Cloud Trace integration
 
-Export PROFILE query plans and Spanner client spans to Cloud Trace:
+Export PROFILE query plans and Spanner client spans via OpenTelemetry (`spannerotel` + the Spanner client's native OTel instrumentation).
+
+Export to Cloud Trace:
 
 ```sh
 $ execspansql $DATABASE_ID --sql "SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}" --query-mode=PROFILE --experimental-trace-project=$PROJECT_ID

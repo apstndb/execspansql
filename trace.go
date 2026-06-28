@@ -46,7 +46,6 @@ func enableTracing(ctx context.Context, o opts) (context.Context, *sdktrace.Trac
 	if err != nil {
 		return ctx, nil, nil, err
 	}
-	tracing.InstallOpenCensusBridge()
 
 	traceCtx, traceCancel := context.WithCancel(ctx)
 	return traceCtx, tp, traceCancel, nil
