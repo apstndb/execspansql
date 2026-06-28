@@ -69,8 +69,8 @@ type opts struct {
 	ParamFlags           []string      `name:"param" help:"[name]=[type or literal]; legacy [name]:[...] also accepted"`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
 	LogGrpc              bool          `name:"log-grpc" help:"Show gRPC logs"`
-	TraceProject         string        `name:"experimental-trace-project" help:"Export traces to Cloud Trace in the given project."`
-	TraceStdout          bool          `name:"experimental-trace-stdout" help:"Export traces to stderr (local debugging; no Cloud Trace credentials required)."`
+	TraceProject         string        `name:"experimental-trace-project" xor:"trace" help:"Export traces to Cloud Trace in the given project."`
+	TraceStdout          bool          `name:"experimental-trace-stdout" xor:"trace" help:"Export traces to stderr (local debugging; no Cloud Trace credentials required)."`
 	EnablePartitionedDML bool          `name:"enable-partitioned-dml" help:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration `name:"timeout" default:"10m" help:"Maximum time to wait for the SQL query to complete"`
 	TryPartitionQuery    bool          `name:"try-partition-query" help:"(Experimental) Check whether the query can be executed as partition query or not"`

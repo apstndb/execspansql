@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/alecthomas/kong"
 	"github.com/apstndb/spannerotel/tracing"
 )
 
@@ -25,6 +26,24 @@ func TestTraceConfigMutuallyExclusive(t *testing.T) {
 	_, err := traceConfig(opts{TraceStdout: true, TraceProject: "p"})
 	if err == nil {
 		t.Fatal("expected error when both trace flags are set")
+	}
+}
+
+func TestTraceFlagsMutuallyExclusiveViaKong(t *testing.T) {
+	t.Parallel()
+
+	parser, err := kong.New(&opts{}, kong.Name("execspansql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parser.Parse([]string{
+		"db", "--project", "p", "--instance", "i",
+		"--experimental-trace-stdout",
+		"--experimental-trace-project", "trace-project",
+		"--sql", "SELECT 1",
+	})
+	if err == nil {
+		t.Fatal("expected kong parse error when both trace flags are set")
 	}
 }
 
