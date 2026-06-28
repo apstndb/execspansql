@@ -443,13 +443,7 @@ func newClient(ctx context.Context, project, instance, database string, logGrpc 
 		copts = append(copts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptor.StreamInterceptor(interceptor.WithDefaultDecorators()))))
 	}
 
-	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
-		SessionPoolConfig: spanner.SessionPoolConfig{
-			MaxOpened:           1,
-			MinOpened:           1,
-			TrackSessionHandles: true,
-		},
-	}, copts...)
+	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{}, copts...)
 }
 
 type encoder interface {

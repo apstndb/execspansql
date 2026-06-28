@@ -34,12 +34,7 @@ func TestSpannerQueryTracingWithoutOpenCensusBridge(t *testing.T) {
 		otel.SetTracerProvider(oldTP)
 	})
 
-	client, err := spanner.NewClientWithConfig(ctx, env.DatabasePath(), spanner.ClientConfig{
-		SessionPoolConfig: spanner.SessionPoolConfig{
-			MaxOpened: 1,
-			MinOpened: 1,
-		},
-	}, append(env.ClientOptions(),
+	client, err := spanner.NewClientWithConfig(ctx, env.DatabasePath(), spanner.ClientConfig{}, append(env.ClientOptions(),
 		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
 			interceptor.StreamInterceptor(interceptor.WithDefaultDecorators()),
 		)),
