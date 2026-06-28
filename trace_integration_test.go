@@ -27,9 +27,11 @@ func TestSpannerQueryTracingWithoutOpenCensusBridge(t *testing.T) {
 
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	oldTP := otel.GetTracerProvider()
 	otel.SetTracerProvider(tp)
 	t.Cleanup(func() {
 		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(oldTP)
 	})
 
 	client, err := spanner.NewClientWithConfig(ctx, env.DatabasePath(), spanner.ClientConfig{
