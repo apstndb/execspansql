@@ -30,6 +30,11 @@ func encodeResultSetYAML(filter string, rs *sppb.ResultSet) ([]byte, error) {
 	if err := jqresult.Print(enc, iter); err != nil {
 		return nil, err
 	}
+	if closer, ok := enc.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			return nil, err
+		}
+	}
 	return buf.Bytes(), nil
 }
 

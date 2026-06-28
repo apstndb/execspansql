@@ -65,6 +65,7 @@ func TestLoadParamFileFixtures(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		t.Run(filepath.Base(tc.file), func(t *testing.T) {
 			t.Parallel()
 			got, err := LoadParamFile(tc.file)
