@@ -6,7 +6,6 @@ import (
 	"errors"
 	"github.com/apstndb/execspansql/params"
 	"io"
-	"regexp"
 	"time"
 
 	"fmt"
@@ -45,8 +44,6 @@ func main() {
 		log.Fatalln(err)
 	}
 }
-
-var dmlRe = regexp.MustCompile(`(?is)^\s*(INSERT|UPDATE|DELETE)\s+.+$`)
 
 var debuglog *log.Logger
 
@@ -302,18 +299,17 @@ func _main() error {
 		otel.SetTracerProvider(tp)
 		oteloc.InstallTraceBridge()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		traceCtx, traceCancel := context.WithCancel(ctx)
+		defer traceCancel()
+		ctx = traceCtx
 
-		// Cleanly shutdown and flush telemetry when the application exits.
-		defer func(ctx context.Context) {
-			// Do not make the application hang when it is shutdown.
-			ctx, cancel = context.WithTimeout(ctx, time.Second*5)
-			defer cancel()
-			if err := tp.Shutdown(ctx); err != nil {
-				log.Fatal(err)
+		defer func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := tp.Shutdown(shutdownCtx); err != nil {
+				log.Printf("trace provider shutdown: %v", err)
 			}
-		}(ctx)
+		}()
 	}
 
 	logGrpc := o.LogGrpc
@@ -348,7 +344,7 @@ func _main() error {
 	switch {
 	case o.EnablePartitionedDML:
 		m = partitionedDML{}
-	case dmlRe.MatchString(query):
+	case isDML(query):
 		m = readWrite{}
 	default:
 		m = single{tb}
@@ -357,7 +353,7 @@ func _main() error {
 	stmt := spanner.Statement{SQL: query, Params: paramMap}
 
 	if o.TryPartitionQuery {
-		bt, err := client.BatchReadOnlyTransaction(ctx, spanner.StrongRead())
+		bt, err := client.BatchReadOnlyTransaction(ctx, tb)
 		if err != nil {
 			return err
 		}

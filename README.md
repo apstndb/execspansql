@@ -55,7 +55,7 @@ Arguments:
   database:                                    (required) ID of the database.
 ```
 
-Local build requires Go 1.24.
+Local build requires Go 1.25.
 
 ```
 $ go install github.com/apstndb/execspansql@latest
