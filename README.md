@@ -40,6 +40,7 @@ Application Options:
       --param-file=                            YAML or JSON file of query parameters
       --log-grpc                               Show gRPC logs
       --experimental-trace-project=
+      --experimental-trace-stdout                  Export traces to stderr (local debugging)
       --enable-partitioned-dml                 Execute DML statement using Partitioned DML
       --timeout=                               Maximum time to wait for the SQL query to complete (default: 10m)
       --try-partition-query                    (Experimental) Check whether the query can be executed as partition query or not
@@ -241,9 +242,19 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
 
 ### (Experimental) Cloud Trace integration
 
+Export PROFILE query plans and Spanner client spans to Cloud Trace:
+
 ```sh
 $ execspansql $DATABASE_ID --sql "SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}" --query-mode=PROFILE --experimental-trace-project=$PROJECT_ID
 ```
+
+For local debugging without Cloud Trace credentials, write spans to stderr:
+
+```sh
+$ execspansql $DATABASE_ID --query-mode=PROFILE --sql 'SELECT 1' --experimental-trace-stdout
+```
+
+`--experimental-trace-stdout` and `--experimental-trace-project` are mutually exclusive.
 
 ![trace.png](docs/trace.png)
 
