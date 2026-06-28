@@ -21,7 +21,7 @@ import (
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
 
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -571,7 +571,7 @@ func runJqOnRowIter(
 func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {
 	switch format {
 	case "yaml":
-		return yaml.NewEncoder(writer), nil
+		return yaml.NewEncoder(writer, yaml.Indent(4)), nil
 	case "json":
 		jsonenc := json.NewEncoder(writer)
 		jsonenc.SetEscapeHTML(false)

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/apstndb/memebridge/cliparams"
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
 )
 
 const (
@@ -91,6 +91,9 @@ func paramFileValueToString(v any) (string, error) {
 	case nil:
 		return "", fmt.Errorf("untyped null values are not supported; use a typed null expression like 'CAST(NULL AS TYPE)' or a type name (PLAN mode only)")
 	case string:
+		if ts, err := time.Parse(time.RFC3339Nano, x); err == nil {
+			return fmt.Sprintf("TIMESTAMP %q", ts.Format(time.RFC3339Nano)), nil
+		}
 		return x, nil
 	case json.Number:
 		return x.String(), nil

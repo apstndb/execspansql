@@ -1,234 +1,234 @@
 metadata:
     rowType:
         fields:
-            - name: SingerId
-              type:
-                code: INT64
-            - name: FirstName
-              type:
-                code: STRING
+        - name: SingerId
+          type:
+              code: INT64
+        - name: FirstName
+          type:
+              code: STRING
     transaction:
         readTimestamp: "2026-06-28T15:55:40.086987Z"
     undeclaredParameters: {}
 rows:
-    - - "1"
-      - Marc
-    - - "2"
-      - Catalina
-    - - "3"
-      - Alice
+- - "1"
+  - Marc
+- - "2"
+  - Catalina
+- - "3"
+  - Alice
 stats:
     queryPlan:
         planNodes:
-            - childLinks:
-                - childIndex: "1"
-                - childIndex: "12"
-                  type: Limit
-              displayName: Limit
-              executionStats:
-                cpu_time:
-                    total: "0.71"
-                    unit: msecs
-                execution_summary:
-                    execution_end_timestamp: "1782662140.107635"
-                    execution_start_timestamp: "1782662140.100167"
-                    num_executions: "1"
-                latency:
-                    total: "7.2"
-                    unit: msecs
-                rows:
-                    total: "3"
-                    unit: rows
-              kind: RELATIONAL
-              metadata:
-                call_type: Global
-                execution_method: Row
-            - childLinks:
-                - childIndex: "2"
-                - childIndex: "11"
-                  type: Split Range
-              displayName: Distributed Union
-              executionStats:
-                cpu_time:
-                    total: "0.7"
-                    unit: msecs
-                execution_summary:
-                    num_executions: "1"
-                latency:
-                    total: "7.2"
-                    unit: msecs
-                remote_calls:
-                    total: "3"
-                    unit: calls
-                rows:
-                    total: "3"
-                    unit: rows
-              index: "1"
-              kind: RELATIONAL
-              metadata:
-                distribution_table: Singers
-                execution_method: Row
-                split_ranges_aligned: "false"
-                subquery_cluster_node: "2"
-            - childLinks:
-                - childIndex: "3"
-                - childIndex: "9"
-                - childIndex: "10"
-              displayName: Serialize Result
-              executionStats:
-                cpu_time:
-                    total: "0.11"
-                    unit: msecs
-                execution_summary:
-                    execution_end_timestamp: "1782662140.105714"
-                    execution_start_timestamp: "1782662140.105587"
-                    num_executions: "1"
-                latency:
-                    total: "0.11"
-                    unit: msecs
-                rows:
-                    total: "3"
-                    unit: rows
-              index: "2"
-              kind: RELATIONAL
-              metadata:
-                execution_method: Row
-            - childLinks:
-                - childIndex: "4"
-                - childIndex: "8"
-                  type: Limit
-              displayName: Limit
-              executionStats:
-                cpu_time:
-                    total: "0.1"
-                    unit: msecs
-                execution_summary:
-                    num_executions: "1"
-                latency:
-                    total: "0.1"
-                    unit: msecs
-                rows:
-                    total: "3"
-                    unit: rows
-              index: "3"
-              kind: RELATIONAL
-              metadata:
-                call_type: Local
-                execution_method: Row
-            - childLinks:
-                - childIndex: "5"
-              displayName: Distributed Union
-              executionStats:
-                cpu_time:
-                    total: "0.1"
-                    unit: msecs
-                execution_summary:
-                    num_executions: "1"
-                latency:
-                    total: "0.1"
-                    unit: msecs
-                remote_calls:
-                    total: "0"
-                    unit: calls
-                rows:
-                    total: "3"
-                    unit: rows
-              index: "4"
-              kind: RELATIONAL
-              metadata:
-                call_type: Local
-                execution_method: Row
-                subquery_cluster_node: "5"
-            - childLinks:
-                - childIndex: "6"
-                  variable: SingerId
-                - childIndex: "7"
-                  variable: FirstName
-              displayName: Scan
-              executionStats:
-                cpu_time:
-                    total: "0.09"
-                    unit: msecs
-                deleted_rows:
-                    mean: "0"
-                    std_deviation: "0"
-                    total: "0"
-                    unit: rows
-                execution_summary:
-                    num_executions: "1"
-                filesystem_delay_seconds:
-                    mean: "0"
-                    std_deviation: "0"
-                    total: "0"
-                    unit: msecs
-                filtered_rows:
-                    mean: "0"
-                    std_deviation: "0"
-                    total: "0"
-                    unit: rows
-                latency:
-                    total: "0.09"
-                    unit: msecs
-                rows:
-                    total: "3"
-                    unit: rows
-                scanned_rows:
-                    histogram:
-                        - count: "1"
-                          lower_bound: "0"
-                          percentage: "50"
-                          upper_bound: "1"
-                        - count: "1"
-                          lower_bound: "1"
-                          percentage: "50"
-                          upper_bound: "4"
-                    mean: "1.5"
-                    std_deviation: "1.5"
-                    total: "3"
-                    unit: rows
-              index: "5"
-              kind: RELATIONAL
-              metadata:
-                Full scan: "true"
-                execution_method: Row
-                scan_method: Row
-                scan_target: Singers
-                scan_type: TableScan
-            - displayName: Reference
-              index: "6"
-              kind: SCALAR
-              shortRepresentation:
-                description: SingerId
-            - displayName: Reference
-              index: "7"
-              kind: SCALAR
-              shortRepresentation:
-                description: FirstName
-            - displayName: Constant
-              index: "8"
-              kind: SCALAR
-              shortRepresentation:
-                description: "3"
-            - displayName: Reference
-              index: "9"
-              kind: SCALAR
-              shortRepresentation:
-                description: $SingerId
-            - displayName: Reference
-              index: "10"
-              kind: SCALAR
-              shortRepresentation:
-                description: $FirstName
-            - displayName: Constant
-              index: "11"
-              kind: SCALAR
-              shortRepresentation:
-                description: "true"
-            - displayName: Constant
-              index: "12"
-              kind: SCALAR
-              shortRepresentation:
-                description: "3"
+        - childLinks:
+          - childIndex: "1"
+          - childIndex: "12"
+            type: Limit
+          displayName: Limit
+          executionStats:
+              cpu_time:
+                  total: "0.71"
+                  unit: msecs
+              execution_summary:
+                  execution_end_timestamp: "1782662140.107635"
+                  execution_start_timestamp: "1782662140.100167"
+                  num_executions: "1"
+              latency:
+                  total: "7.2"
+                  unit: msecs
+              rows:
+                  total: "3"
+                  unit: rows
+          kind: RELATIONAL
+          metadata:
+              call_type: Global
+              execution_method: Row
+        - childLinks:
+          - childIndex: "2"
+          - childIndex: "11"
+            type: Split Range
+          displayName: Distributed Union
+          executionStats:
+              cpu_time:
+                  total: "0.7"
+                  unit: msecs
+              execution_summary:
+                  num_executions: "1"
+              latency:
+                  total: "7.2"
+                  unit: msecs
+              remote_calls:
+                  total: "3"
+                  unit: calls
+              rows:
+                  total: "3"
+                  unit: rows
+          index: "1"
+          kind: RELATIONAL
+          metadata:
+              distribution_table: Singers
+              execution_method: Row
+              split_ranges_aligned: "false"
+              subquery_cluster_node: "2"
+        - childLinks:
+          - childIndex: "3"
+          - childIndex: "9"
+          - childIndex: "10"
+          displayName: Serialize Result
+          executionStats:
+              cpu_time:
+                  total: "0.11"
+                  unit: msecs
+              execution_summary:
+                  execution_end_timestamp: "1782662140.105714"
+                  execution_start_timestamp: "1782662140.105587"
+                  num_executions: "1"
+              latency:
+                  total: "0.11"
+                  unit: msecs
+              rows:
+                  total: "3"
+                  unit: rows
+          index: "2"
+          kind: RELATIONAL
+          metadata:
+              execution_method: Row
+        - childLinks:
+          - childIndex: "4"
+          - childIndex: "8"
+            type: Limit
+          displayName: Limit
+          executionStats:
+              cpu_time:
+                  total: "0.1"
+                  unit: msecs
+              execution_summary:
+                  num_executions: "1"
+              latency:
+                  total: "0.1"
+                  unit: msecs
+              rows:
+                  total: "3"
+                  unit: rows
+          index: "3"
+          kind: RELATIONAL
+          metadata:
+              call_type: Local
+              execution_method: Row
+        - childLinks:
+          - childIndex: "5"
+          displayName: Distributed Union
+          executionStats:
+              cpu_time:
+                  total: "0.1"
+                  unit: msecs
+              execution_summary:
+                  num_executions: "1"
+              latency:
+                  total: "0.1"
+                  unit: msecs
+              remote_calls:
+                  total: "0"
+                  unit: calls
+              rows:
+                  total: "3"
+                  unit: rows
+          index: "4"
+          kind: RELATIONAL
+          metadata:
+              call_type: Local
+              execution_method: Row
+              subquery_cluster_node: "5"
+        - childLinks:
+          - childIndex: "6"
+            variable: SingerId
+          - childIndex: "7"
+            variable: FirstName
+          displayName: Scan
+          executionStats:
+              cpu_time:
+                  total: "0.09"
+                  unit: msecs
+              deleted_rows:
+                  mean: "0"
+                  std_deviation: "0"
+                  total: "0"
+                  unit: rows
+              execution_summary:
+                  num_executions: "1"
+              filesystem_delay_seconds:
+                  mean: "0"
+                  std_deviation: "0"
+                  total: "0"
+                  unit: msecs
+              filtered_rows:
+                  mean: "0"
+                  std_deviation: "0"
+                  total: "0"
+                  unit: rows
+              latency:
+                  total: "0.09"
+                  unit: msecs
+              rows:
+                  total: "3"
+                  unit: rows
+              scanned_rows:
+                  histogram:
+                  - count: "1"
+                    lower_bound: "0"
+                    percentage: "50"
+                    upper_bound: "1"
+                  - count: "1"
+                    lower_bound: "1"
+                    percentage: "50"
+                    upper_bound: "4"
+                  mean: "1.5"
+                  std_deviation: "1.5"
+                  total: "3"
+                  unit: rows
+          index: "5"
+          kind: RELATIONAL
+          metadata:
+              Full scan: "true"
+              execution_method: Row
+              scan_method: Row
+              scan_target: Singers
+              scan_type: TableScan
+        - displayName: Reference
+          index: "6"
+          kind: SCALAR
+          shortRepresentation:
+              description: SingerId
+        - displayName: Reference
+          index: "7"
+          kind: SCALAR
+          shortRepresentation:
+              description: FirstName
+        - displayName: Constant
+          index: "8"
+          kind: SCALAR
+          shortRepresentation:
+              description: "3"
+        - displayName: Reference
+          index: "9"
+          kind: SCALAR
+          shortRepresentation:
+              description: $SingerId
+        - displayName: Reference
+          index: "10"
+          kind: SCALAR
+          shortRepresentation:
+              description: $FirstName
+        - displayName: Constant
+          index: "11"
+          kind: SCALAR
+          shortRepresentation:
+              description: "true"
+        - displayName: Constant
+          index: "12"
+          kind: SCALAR
+          shortRepresentation:
+              description: "3"
     queryStats:
         bytes_returned: "39"
         cpu_time: 18.46 msecs
