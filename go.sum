@@ -56,8 +56,8 @@ github.com/apstndb/spanemuboost v0.4.6 h1:9f1qQDLNrPQJiswNLtiTaR0U//zToqxjcEGWGk
 github.com/apstndb/spanemuboost v0.4.6/go.mod h1:urUe85EvqomWV4vCj2pALluNhIksbu9RAQZufgq1b8E=
 github.com/apstndb/spaniter v0.3.0 h1:b0zXMONClGRfvWf7ciwsIYVso9qkhqFdjH0+PqOnQGI=
 github.com/apstndb/spaniter v0.3.0/go.mod h1:aBSHcHIqgAZXCxFdi734R/wAQUIuCQ6WZ+CjOCxARIM=
-github.com/apstndb/spannerotel v0.0.0-20260628190438-240bccef4680 h1:Pz5iwvyMVClzX04v4dqPG4Cc3xJIGqxsQUW7aebPfxo=
-github.com/apstndb/spannerotel v0.0.0-20260628190438-240bccef4680/go.mod h1:tD+JGppXRRgxPvlfc4OADUGgpHNSkoZ2qbHwbZ3rtJo=
+github.com/apstndb/spannerotel v0.2.0 h1:EpGzxB9CfnRedlOlO/x4+c8+vOEbptGcd0PegEMsKYk=
+github.com/apstndb/spannerotel v0.2.0/go.mod h1:tD+JGppXRRgxPvlfc4OADUGgpHNSkoZ2qbHwbZ3rtJo=
 github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
 github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
 github.com/apstndb/spanvalue v0.8.0 h1:wLHl/0m5C6PvRwJOJoz1nRL4qSpS17eS1tW3Pjzcvo8=
