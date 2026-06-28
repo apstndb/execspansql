@@ -39,8 +39,10 @@ Application Options:
       --param=                                 [name]=[Cloud Spanner type(PLAN only) or literal]; legacy name:value OK
       --param-file=                            YAML or JSON file of query parameters
       --log-grpc                               Show gRPC logs
-      --experimental-trace-project=
-      --experimental-trace-stdout                  Export traces to stderr (local debugging)
+      --experimental-trace-project=                Export traces to Cloud Trace
+      --experimental-trace-stdout                  Export spans to stderr as pretty JSON
+      --experimental-trace-otlp                    Export spans via OTLP/gRPC (local collector)
+      --experimental-trace-otlp-endpoint=          OTLP/gRPC endpoint (default: localhost:4317)
       --enable-partitioned-dml                 Execute DML statement using Partitioned DML
       --timeout=                               Maximum time to wait for the SQL query to complete (default: 10m)
       --try-partition-query                    (Experimental) Check whether the query can be executed as partition query or not
@@ -240,23 +242,43 @@ $ execspansql ${DATABASE_ID} --query-mode=NORMAL \
      --param='songinfo=STRUCT<SongName STRING, ArtistNames ARRAY<STRUCT<FirstName STRING, LastName STRING>>>("Imagination", [("Elena", "Campbell"), ("Hannah", "Harris")])'
 ```
 
-### (Experimental) Cloud Trace integration
+### (Experimental) OpenTelemetry tracing
 
-Export PROFILE query plans and Spanner client spans via OpenTelemetry (`spannerotel` + the Spanner client's native OTel instrumentation).
+Export Spanner client spans and PROFILE query plans via OpenTelemetry (`spannerotel` + the Spanner client's native OTel instrumentation).
 
-Export to Cloud Trace:
+Plan node spans (`spannerotel/plantotrace`) appear only with **`--query-mode=PROFILE`** (or equivalent stats that include a query plan). NORMAL mode still records Spanner client spans, but not per-plan-node children.
+
+Exactly one trace export flag may be set: `--experimental-trace-project`, `--experimental-trace-stdout`, or `--experimental-trace-otlp`.
+
+#### Cloud Trace
 
 ```sh
-$ execspansql $DATABASE_ID --sql "SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}" --query-mode=PROFILE --experimental-trace-project=$PROJECT_ID
+$ execspansql $DATABASE_ID --sql "SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}" \
+    --query-mode=PROFILE --experimental-trace-project=$PROJECT_ID
 ```
 
-For local debugging without Cloud Trace credentials, write spans to stderr:
+#### Local collector (OTLP/gRPC)
+
+Send spans to a local OpenTelemetry Collector, Jaeger, Grafana Tempo, etc.:
+
+```sh
+# Example: collector listening on localhost:4317
+$ execspansql $DATABASE_ID --query-mode=PROFILE --sql 'SELECT 1' --experimental-trace-otlp
+
+# Custom endpoint
+$ execspansql $DATABASE_ID --query-mode=PROFILE --sql 'SELECT 1' \
+    --experimental-trace-otlp --experimental-trace-otlp-endpoint=127.0.0.1:4317
+```
+
+#### stderr JSON (no collector)
+
+Pretty-printed span JSON to stderr:
 
 ```sh
 $ execspansql $DATABASE_ID --query-mode=PROFILE --sql 'SELECT 1' --experimental-trace-stdout
 ```
 
-`--experimental-trace-stdout` and `--experimental-trace-project` are mutually exclusive.
+Note: `--experimental-trace-stdout` writes to **stderr**, not stdout.
 
 ![trace.png](docs/trace.png)
 

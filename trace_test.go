@@ -29,6 +29,27 @@ func TestTraceConfigMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestTraceConfigOTLP(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := traceConfig(opts{TraceOTLP: true, TraceOTLPEndpoint: "127.0.0.1:4317"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Exporter != tracing.ExporterOTLP {
+		t.Fatalf("exporter = %q, want %q", cfg.Exporter, tracing.ExporterOTLP)
+	}
+	if cfg.OTLPEndpoint != "127.0.0.1:4317" {
+		t.Fatalf("endpoint = %q", cfg.OTLPEndpoint)
+	}
+	if cfg.ServiceName != "execspansql" {
+		t.Fatalf("service name = %q", cfg.ServiceName)
+	}
+	if !cfg.OTLPInsecure {
+		t.Fatal("expected insecure otlp for local collector")
+	}
+}
+
 func TestTraceFlagsMutuallyExclusiveViaKong(t *testing.T) {
 	t.Parallel()
 
@@ -81,6 +102,9 @@ func TestTracingEnabled(t *testing.T) {
 	}
 	if !tracingEnabled(opts{TraceProject: "demo"}) {
 		t.Fatal("project should enable tracing")
+	}
+	if !tracingEnabled(opts{TraceOTLP: true}) {
+		t.Fatal("otlp should enable tracing")
 	}
 	if tracingEnabled(opts{}) {
 		t.Fatal("expected tracing disabled by default")

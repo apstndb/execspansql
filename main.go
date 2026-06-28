@@ -70,7 +70,9 @@ type opts struct {
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
 	LogGrpc              bool          `name:"log-grpc" help:"Show gRPC logs"`
 	TraceProject         string        `name:"experimental-trace-project" xor:"trace" help:"Export traces to Cloud Trace in the given project."`
-	TraceStdout          bool          `name:"experimental-trace-stdout" xor:"trace" help:"Export traces to stderr (local debugging; no Cloud Trace credentials required)."`
+	TraceStdout          bool          `name:"experimental-trace-stdout" xor:"trace" help:"Export spans to stderr as pretty JSON (local debugging)."`
+	TraceOTLP            bool          `name:"experimental-trace-otlp" xor:"trace" help:"Export spans via OTLP/gRPC to a local OpenTelemetry collector."`
+	TraceOTLPEndpoint    string        `name:"experimental-trace-otlp-endpoint" default:"localhost:4317" help:"OTLP/gRPC endpoint used with --experimental-trace-otlp."`
 	EnablePartitionedDML bool          `name:"enable-partitioned-dml" help:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration `name:"timeout" default:"10m" help:"Maximum time to wait for the SQL query to complete"`
 	TryPartitionQuery    bool          `name:"try-partition-query" help:"(Experimental) Check whether the query can be executed as partition query or not"`
