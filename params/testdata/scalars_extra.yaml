@@ -1,0 +1,7 @@
+id: 123
+enabled: false
+price: 1.0
+ratio: 0.25
+tag: yes
+label: "ARRAY<INT64>"
+created_at: 2023-01-01T00:00:00Z

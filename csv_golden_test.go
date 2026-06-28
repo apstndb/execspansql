@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-var updateGolden = flag.Bool("update-golden", false, "rewrite testdata/experimental_csv/*.golden files")
+var updateGolden = flag.Bool("update-golden", false, "rewrite testdata/experimental_csv/*.golden, testdata/yaml_output/*.golden, and profile YAML goldens")
 
 func TestExperimentalCsvGolden(t *testing.T) {
 	for name, rs := range csvGoldenFixtures() {

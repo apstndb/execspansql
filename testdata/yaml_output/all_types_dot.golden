@@ -1,0 +1,20 @@
+metadata:
+    rowType:
+        fields:
+            - name: payload
+              type:
+                code: BYTES
+            - name: d
+              type:
+                code: DATE
+            - name: ts
+              type:
+                code: TIMESTAMP
+            - name: "n"
+              type:
+                code: NUMERIC
+rows:
+    - - YWJj
+      - "2024-06-01"
+      - "2024-06-01T12:34:56Z"
+      - "99.5"
