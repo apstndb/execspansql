@@ -1,14 +1,16 @@
 package resultset
 
 import (
-	"slices"
-	"spheric.cloud/xiter"
-
 	"cloud.google.com/go/spanner"
+	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // RowToListValue converts a Spanner row to structpb.ListValue.
 func RowToListValue(r *spanner.Row) *structpb.ListValue {
-	return &structpb.ListValue{Values: slices.Collect(xiter.Map(xiter.Range(0, r.Size()), r.ColumnValue))}
+	return &structpb.ListValue{
+		Values: lo.Map(lo.Range(r.Size()), func(i int, _ int) *structpb.Value {
+			return r.ColumnValue(i)
+		}),
+	}
 }

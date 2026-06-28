@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/csv"
 	"fmt"
+	"iter"
 	"strings"
 	"testing"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
-	"spheric.cloud/xiter"
 
 	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/params"
@@ -29,6 +29,17 @@ var ddl string
 
 //go:embed testdata/dml.sql
 var dml string
+
+func collectRows(seq iter.Seq2[*spanner.Row, error]) ([]*spanner.Row, error) {
+	var rows []*spanner.Row
+	for row, err := range seq {
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
 
 func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Context, sql, filter string) []any {
 	t.Helper()
@@ -298,7 +309,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 					spanner.Statement{SQL: "SELECT @v AS v", Params: params},
 					spanner.QueryOptions{Mode: sppb.ExecuteSqlRequest_NORMAL.Enum()})
 
-				rows, err := xiter.TryCollect(spaniter.RowIteratorSeq(rowIter))
+				rows, err := collectRows(spaniter.RowIteratorSeq(rowIter))
 				if err != nil {
 					t.Error(err)
 					return
