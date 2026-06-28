@@ -9,7 +9,7 @@ require (
 	github.com/apstndb/memebridge v0.6.1
 	github.com/apstndb/spanemuboost v0.4.6
 	github.com/apstndb/spaniter v0.3.0
-	github.com/apstndb/spannerotel v0.0.0-20260628184824-0bf1b1eea1d2
+	github.com/apstndb/spannerotel v0.0.0-20260628185324-da71766e8a21
 	github.com/apstndb/spanvalue v0.8.0
 	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/goccy/go-yaml v1.19.2
