@@ -12,9 +12,9 @@ import (
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/gsqlsep"
 	"github.com/apstndb/spanemuboost"
 	"github.com/apstndb/spaniter"
+	"github.com/cloudspannerecosystem/memefish"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -29,6 +29,29 @@ var ddl string
 
 //go:embed testdata/dml.sql
 var dml string
+
+func splitSQLStatements(s string) ([]string, error) {
+	stmts, err := memefish.SplitRawStatements("", s)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(stmts))
+	for _, stmt := range stmts {
+		if trimmed := strings.TrimSpace(stmt.Statement); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out, nil
+}
+
+func mustSplitSQLStatements(t *testing.T, s string) []string {
+	t.Helper()
+	out, err := splitSQLStatements(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
 
 func collectRows(seq iter.Seq2[*spanner.Row, error]) ([]*spanner.Row, error) {
 	var rows []*spanner.Row
@@ -82,8 +105,8 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 	ctx := context.Background()
 
 	env, err := spanemuboost.RunEmulatorWithClients(ctx,
-		spanemuboost.WithSetupDDLs(gsqlsep.SeparateInputString(ddl)),
-		spanemuboost.WithSetupRawDMLs(gsqlsep.SeparateInputString(dml)),
+		spanemuboost.WithSetupDDLs(mustSplitSQLStatements(t, ddl)),
+		spanemuboost.WithSetupRawDMLs(mustSplitSQLStatements(t, dml)),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -33,6 +33,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/apstndb/execspansql/jqresult"
 	"github.com/apstndb/execspansql/resultset"
+	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
@@ -344,7 +345,7 @@ func _main() error {
 	switch {
 	case o.EnablePartitionedDML:
 		m = partitionedDML{}
-	case isDML(query):
+	case stmtkind.IsDMLLexical(query):
 		m = readWrite{}
 	default:
 		m = single{tb}

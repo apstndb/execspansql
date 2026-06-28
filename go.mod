@@ -6,12 +6,13 @@ require (
 	cloud.google.com/go/spanner v1.84.1
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.24.0
 	github.com/alecthomas/kong v1.15.0
-	github.com/apstndb/gsqlsep v0.0.0-20240823174243-432be37d515a
+	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
 	github.com/apstndb/memebridge v0.6.1
 	github.com/apstndb/spanemuboost v0.4.6
 	github.com/apstndb/spaniter v0.3.0
 	github.com/apstndb/spannerotel v0.0.0-20220113012943-45b1c9cc5afb
 	github.com/apstndb/spanvalue v0.8.0
+	github.com/cloudspannerecosystem/memefish v0.6.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
@@ -44,7 +45,6 @@ require (
 	github.com/apstndb/spantype v0.3.11 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cloudspannerecosystem/memefish v0.6.2 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -107,7 +107,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
