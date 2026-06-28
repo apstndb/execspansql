@@ -1,0 +1,12 @@
+# Common Spanner parameter literal strings for --param-file
+b: "TRUE"
+bs: 'b"foo"'
+i64: "1"
+f64: "1.0"
+f32: "CAST(1.0 AS FLOAT32)"
+n: 'NUMERIC "1"'
+s: "'foo'"
+js: 'JSON "{}"'
+ts: 'TIMESTAMP "2000-01-01T00:00:00Z"'
+ival_single: "INTERVAL 3 DAY"
+n_b: "CAST(NULL AS BOOL)"

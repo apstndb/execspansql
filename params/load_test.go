@@ -63,46 +63,15 @@ func TestLoadParamFile(t *testing.T) {
 
 	dir := t.TempDir()
 
-	yamlPath := filepath.Join(dir, "params.yaml")
-	if err := os.WriteFile(yamlPath, []byte("arr: ARRAY<STRING>\nname: \"42\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := LoadParamFile(yamlPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{"arr": "ARRAY<STRING>", "name": "42"}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("(-want +got)\n%s", diff)
-	}
-
 	jsonPath := filepath.Join(dir, "params.json")
 	if err := os.WriteFile(jsonPath, []byte(`{"arr":"ARRAY<STRING>"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err = LoadParamFile(jsonPath)
+	got, err := LoadParamFile(jsonPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if diff := cmp.Diff(map[string]string{"arr": "ARRAY<STRING>"}, got); diff != "" {
-		t.Fatalf("(-want +got)\n%s", diff)
-	}
-
-	yamlScalarsPath := filepath.Join(dir, "params-scalars.yaml")
-	if err := os.WriteFile(yamlScalarsPath, []byte("id: 123\nenabled: true\nprice: 1.0\ncreated_at: 2023-01-01T00:00:00Z\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err = LoadParamFile(yamlScalarsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantScalars := map[string]string{
-		"id":         "123",
-		"enabled":    "TRUE",
-		"price":      "1.0",
-		"created_at": `TIMESTAMP "2023-01-01T00:00:00Z"`,
-	}
-	if diff := cmp.Diff(wantScalars, got); diff != "" {
 		t.Fatalf("(-want +got)\n%s", diff)
 	}
 
@@ -116,14 +85,6 @@ func TestLoadParamFile(t *testing.T) {
 	}
 	if got["id"] != "1234567890123456789" {
 		t.Fatalf("got id=%q, want exact integer string", got["id"])
-	}
-
-	nestedPath := filepath.Join(dir, "params-nested.yaml")
-	if err := os.WriteFile(nestedPath, []byte("arr: [1, 2]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadParamFile(nestedPath); err == nil {
-		t.Fatal("expected error for nested array in param file")
 	}
 
 	emptyPath := filepath.Join(dir, "params-empty.yaml")

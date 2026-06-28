@@ -1,0 +1,282 @@
+metadata:
+    rowType:
+        fields:
+            - name: SingerId
+              type:
+                code: INT64
+            - name: AlbumId
+              type:
+                code: INT64
+            - name: AlbumTitle
+              type:
+                code: STRING
+    transaction:
+        readTimestamp: "2026-06-28T15:55:38.446224Z"
+    undeclaredParameters: {}
+rows:
+    - - "2"
+      - "1"
+      - Green
+    - - "2"
+      - "2"
+      - Forever Hold Your Peace
+stats:
+    queryPlan:
+        planNodes:
+            - childLinks:
+                - childIndex: "1"
+                - childIndex: "17"
+                  type: Split Range
+              displayName: Distributed Union
+              executionStats:
+                cpu_time:
+                    total: "0.23"
+                    unit: msecs
+                execution_summary:
+                    execution_end_timestamp: "1782662138.486515"
+                    execution_start_timestamp: "1782662138.485666"
+                    num_executions: "1"
+                latency:
+                    total: "0.83"
+                    unit: msecs
+                remote_calls:
+                    total: "0"
+                    unit: calls
+                rows:
+                    total: "2"
+                    unit: rows
+              kind: RELATIONAL
+              metadata:
+                distribution_table: Singers
+                execution_method: Row
+                split_ranges_aligned: "true"
+                subquery_cluster_node: "1"
+            - childLinks:
+                - childIndex: "2"
+                - childIndex: "14"
+                - childIndex: "15"
+                - childIndex: "16"
+              displayName: Serialize Result
+              executionStats:
+                cpu_time:
+                    total: "0.21"
+                    unit: msecs
+                execution_summary:
+                    execution_end_timestamp: "1782662138.486510"
+                    execution_start_timestamp: "1782662138.485691"
+                    num_executions: "1"
+                latency:
+                    total: "0.81"
+                    unit: msecs
+                rows:
+                    total: "2"
+                    unit: rows
+              index: "1"
+              kind: RELATIONAL
+              metadata:
+                execution_method: Row
+            - childLinks:
+                - childIndex: "3"
+                - childIndex: "13"
+                  type: Limit
+              displayName: Limit
+              executionStats:
+                cpu_time:
+                    total: "0.21"
+                    unit: msecs
+                execution_summary:
+                    num_executions: "1"
+                latency:
+                    total: "0.81"
+                    unit: msecs
+                rows:
+                    total: "2"
+                    unit: rows
+              index: "2"
+              kind: RELATIONAL
+              metadata:
+                call_type: Global
+                execution_method: Row
+            - childLinks:
+                - childIndex: "4"
+              displayName: Distributed Union
+              executionStats:
+                cpu_time:
+                    total: "0.21"
+                    unit: msecs
+                execution_summary:
+                    num_executions: "1"
+                latency:
+                    total: "0.81"
+                    unit: msecs
+                remote_calls:
+                    total: "0"
+                    unit: calls
+                rows:
+                    total: "2"
+                    unit: rows
+              index: "3"
+              kind: RELATIONAL
+              metadata:
+                call_type: Local
+                execution_method: Row
+                subquery_cluster_node: "4"
+            - childLinks:
+                - childIndex: "5"
+              displayName: Filter Scan
+              index: "4"
+              kind: RELATIONAL
+              metadata:
+                execution_method: Row
+                seekable_key_size: "0"
+            - childLinks:
+                - childIndex: "6"
+                  variable: SingerId
+                - childIndex: "7"
+                  variable: AlbumId
+                - childIndex: "8"
+                  variable: AlbumTitle
+                - childIndex: "12"
+                  type: Seek Condition
+              displayName: Scan
+              executionStats:
+                cpu_time:
+                    total: "0.2"
+                    unit: msecs
+                deleted_rows:
+                    total: "0"
+                    unit: rows
+                execution_summary:
+                    num_executions: "1"
+                filesystem_delay_seconds:
+                    total: "0.57"
+                    unit: msecs
+                filtered_rows:
+                    total: "0"
+                    unit: rows
+                latency:
+                    total: "0.8"
+                    unit: msecs
+                rows:
+                    total: "2"
+                    unit: rows
+                scanned_rows:
+                    total: "2"
+                    unit: rows
+              index: "5"
+              kind: RELATIONAL
+              metadata:
+                execution_method: Row
+                scan_method: Row
+                scan_target: Albums
+                scan_type: TableScan
+            - displayName: Reference
+              index: "6"
+              kind: SCALAR
+              shortRepresentation:
+                description: SingerId
+            - displayName: Reference
+              index: "7"
+              kind: SCALAR
+              shortRepresentation:
+                description: AlbumId
+            - displayName: Reference
+              index: "8"
+              kind: SCALAR
+              shortRepresentation:
+                description: AlbumTitle
+            - childLinks:
+                - childIndex: "10"
+                - childIndex: "11"
+              displayName: Function
+              index: "9"
+              kind: SCALAR
+              shortRepresentation:
+                description: ($SingerId = @sid)
+            - displayName: Reference
+              index: "10"
+              kind: SCALAR
+              shortRepresentation:
+                description: $SingerId
+            - displayName: Parameter
+              index: "11"
+              kind: SCALAR
+              metadata:
+                name: sid
+                type: scalar
+              shortRepresentation:
+                description: '@sid'
+            - childLinks:
+                - childIndex: "9"
+              displayName: Function
+              index: "12"
+              kind: SCALAR
+              shortRepresentation:
+                description: ($SingerId = @sid)
+            - displayName: Constant
+              index: "13"
+              kind: SCALAR
+              shortRepresentation:
+                description: "2"
+            - displayName: Parameter
+              index: "14"
+              kind: SCALAR
+              metadata:
+                name: sid
+                type: scalar
+              shortRepresentation:
+                description: '@sid'
+            - displayName: Reference
+              index: "15"
+              kind: SCALAR
+              shortRepresentation:
+                description: $AlbumId
+            - displayName: Reference
+              index: "16"
+              kind: SCALAR
+              shortRepresentation:
+                description: $AlbumTitle
+            - childLinks:
+                - childIndex: "18"
+                - childIndex: "19"
+              displayName: Function
+              index: "17"
+              kind: SCALAR
+              shortRepresentation:
+                description: ($SingerId = @sid)
+            - displayName: Reference
+              index: "18"
+              kind: SCALAR
+              shortRepresentation:
+                description: $SingerId
+            - displayName: Parameter
+              index: "19"
+              kind: SCALAR
+              metadata:
+                name: sid
+                type: scalar
+              shortRepresentation:
+                description: '@sid'
+    queryStats:
+        bytes_returned: "48"
+        cpu_time: 13.58 msecs
+        data_bytes_read: "0"
+        deleted_rows_scanned: "0"
+        elapsed_time: 40.25 msecs
+        filesystem_delay_seconds: 0.57 msecs
+        is_graph_query: "false"
+        locking_delay: 0 msecs
+        memory_peak_usage_bytes: "52"
+        memory_usage_percentage: "0.000"
+        optimizer_statistics_package: auto_20260627_06_11_04UTC
+        optimizer_version: "8"
+        query_plan_creation_time: 8.33 msecs
+        query_text: SELECT SingerId, AlbumId, AlbumTitle FROM Albums WHERE SingerId = @sid ORDER BY AlbumId LIMIT 2
+        remote_server_calls: 0/0
+        rows_returned: "2"
+        rows_scanned: "2"
+        runtime_creation_time: 0.32 msecs
+        server_queue_delay: 0.03 msecs
+        statistics_load_time: "0"
+        time_to_first_row: 40.12 msecs
+        total_memory_peak_usage_byte: "52"

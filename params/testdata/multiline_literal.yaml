@@ -1,0 +1,5 @@
+query: |
+  SELECT SingerId, FirstName
+  FROM Singers
+  WHERE SingerId = @id
+id: "42"
