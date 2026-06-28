@@ -71,9 +71,7 @@ func LoadParamFile(path string) (map[string]string, error) {
 			return nil, fmt.Errorf("parse param file as JSON: %w", err)
 		}
 	default:
-		if err := yaml.Unmarshal(b, &raw); err != nil {
-			return nil, fmt.Errorf("parse param file as YAML: %w", err)
-		}
+		return loadParamYAMLFile(b)
 	}
 	out := make(map[string]string, len(raw))
 	for k, v := range raw {
@@ -86,14 +84,50 @@ func LoadParamFile(path string) (map[string]string, error) {
 	return out, nil
 }
 
+func loadParamYAMLFile(b []byte) (map[string]string, error) {
+	var raw map[string]yaml.RawMessage
+	if err := yaml.Unmarshal(b, &raw); err != nil {
+		return nil, fmt.Errorf("parse param file as YAML: %w", err)
+	}
+	out := make(map[string]string, len(raw))
+	for k, msg := range raw {
+		s, err := paramFileYAMLValueToString(msg)
+		if err != nil {
+			return nil, fmt.Errorf("parameter %q: %w", k, err)
+		}
+		out[k] = s
+	}
+	return out, nil
+}
+
+func paramFileYAMLValueToString(raw yaml.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return "", fmt.Errorf("empty value")
+	}
+	if trimmed[0] == '"' || trimmed[0] == '\'' {
+		var s string
+		if err := yaml.Unmarshal(raw, &s); err != nil {
+			return "", err
+		}
+		return s, nil
+	}
+	var t time.Time
+	if err := yaml.Unmarshal(raw, &t); err == nil && !t.IsZero() {
+		return fmt.Sprintf("TIMESTAMP %q", t.Format(time.RFC3339Nano)), nil
+	}
+	var v any
+	if err := yaml.Unmarshal(raw, &v); err != nil {
+		return "", err
+	}
+	return paramFileValueToString(v)
+}
+
 func paramFileValueToString(v any) (string, error) {
 	switch x := v.(type) {
 	case nil:
 		return "", fmt.Errorf("untyped null values are not supported; use a typed null expression like 'CAST(NULL AS TYPE)' or a type name (PLAN mode only)")
 	case string:
-		if ts, err := time.Parse(time.RFC3339Nano, x); err == nil {
-			return fmt.Sprintf("TIMESTAMP %q", ts.Format(time.RFC3339Nano)), nil
-		}
 		return x, nil
 	case json.Number:
 		return x.String(), nil

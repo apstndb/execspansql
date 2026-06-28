@@ -506,6 +506,17 @@ func (enc *stringPassThroughEncoderWrapper) Encode(v any) error {
 	return enc.Enc.Encode(v)
 }
 
+func (enc *stringPassThroughEncoderWrapper) Close() error {
+	return closeEncoder(enc.Enc)
+}
+
+func closeEncoder(enc encoder) error {
+	if closer, ok := enc.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 func runJqOutput(
 	ctx context.Context,
 	client *spanner.Client,
@@ -529,6 +540,7 @@ func runJqOutput(
 		if err != nil {
 			return err
 		}
+		defer func() { _ = closeEncoder(enc) }()
 		iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, o.RedactRows)
 		if err != nil {
 			return err
@@ -560,6 +572,7 @@ func runJqOnRowIter(
 	jqCode *gojq.Code,
 	enc encoder,
 ) error {
+	defer func() { _ = closeEncoder(enc) }()
 	iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputLazy, rowIter, nil, redactRows)
 	if err != nil {
 		return err
