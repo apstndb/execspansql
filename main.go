@@ -13,12 +13,6 @@ import (
 	"os"
 
 	"encoding/json"
-	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
-	oteloc "go.opentelemetry.io/otel/bridge/opencensus"
-
-	"go.opentelemetry.io/otel"
-
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/goccy/go-yaml"
 
@@ -75,7 +69,8 @@ type opts struct {
 	ParamFlags           []string      `name:"param" help:"[name]=[type or literal]; legacy [name]:[...] also accepted"`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
 	LogGrpc              bool          `name:"log-grpc" help:"Show gRPC logs"`
-	TraceProject         string        `name:"experimental-trace-project" help:"Export traces to Cloud Trace in the given project."`
+	TraceProject         string        `name:"experimental-trace-project" xor:"trace" help:"Export traces to Cloud Trace in the given project."`
+	TraceStdout          bool          `name:"experimental-trace-stdout" xor:"trace" help:"Export traces to stderr (local debugging; no Cloud Trace credentials required)."`
 	EnablePartitionedDML bool          `name:"enable-partitioned-dml" help:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration `name:"timeout" default:"10m" help:"Maximum time to wait for the SQL query to complete"`
 	TryPartitionQuery    bool          `name:"try-partition-query" help:"(Experimental) Check whether the query can be executed as partition query or not"`
@@ -232,27 +227,6 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 	}
 }
 
-func cloudOperationsExporter(project string) (sdktrace.SpanExporter, error) {
-	exporter, err := texporter.New(texporter.WithProjectID(project))
-	if err != nil {
-		return nil, fmt.Errorf("texporter.New: %v", err)
-	}
-	return exporter, err
-}
-
-func TracerProvider(project string) (*sdktrace.TracerProvider, error) {
-	exp, err := cloudOperationsExporter(project)
-	if err != nil {
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		// Always be sure to batch in production.
-		sdktrace.WithBatcher(exp),
-	)
-	return tp, nil
-}
-
 func _main() error {
 	o, err := processFlags()
 	if err != nil {
@@ -290,24 +264,16 @@ func _main() error {
 		return err
 	}
 
-	doTrace := o.TraceProject != ""
-	if doTrace {
-		tp, err := TracerProvider(o.TraceProject)
-		if err != nil {
-			return err
-		}
-
-		otel.SetTracerProvider(tp)
-		oteloc.InstallTraceBridge()
-
-		traceCtx, traceCancel := context.WithCancel(ctx)
+	ctx, tp, traceCancel, err := enableTracing(ctx, o)
+	if err != nil {
+		return err
+	}
+	if traceCancel != nil {
 		defer traceCancel()
-		ctx = traceCtx
-
+	}
+	if tp != nil {
 		defer func() {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutdownCancel()
-			if err := tp.Shutdown(shutdownCtx); err != nil {
+			if err := shutdownTracing(context.Background(), tp); err != nil {
 				log.Printf("trace provider shutdown: %v", err)
 			}
 		}()
@@ -315,7 +281,7 @@ func _main() error {
 
 	logGrpc := o.LogGrpc
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Database, logGrpc, doTrace)
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, logGrpc, tracingEnabled(o))
 	if err != nil {
 		return err
 	}
@@ -477,13 +443,7 @@ func newClient(ctx context.Context, project, instance, database string, logGrpc 
 		copts = append(copts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptor.StreamInterceptor(interceptor.WithDefaultDecorators()))))
 	}
 
-	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{
-		SessionPoolConfig: spanner.SessionPoolConfig{
-			MaxOpened:           1,
-			MinOpened:           1,
-			TrackSessionHandles: true,
-		},
-	}, copts...)
+	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{}, copts...)
 }
 
 type encoder interface {
