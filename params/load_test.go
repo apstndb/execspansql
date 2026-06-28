@@ -11,7 +11,7 @@ import (
 func TestParseParamFlags(t *testing.T) {
 	t.Parallel()
 
-	got, err := ParseParamFlags([]string{"arr:ARRAY<STRING>", "name:42"})
+	got, err := ParseParamFlags([]string{"arr=ARRAY<STRING>", "name=42"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,6 +22,35 @@ func TestParseParamFlags(t *testing.T) {
 
 	if _, err := ParseParamFlags([]string{"invalid"}); err == nil {
 		t.Fatal("expected error for invalid param")
+	}
+
+	if _, err := ParseParamFlags([]string{"=value"}); err == nil {
+		t.Fatal("expected error for empty parameter name")
+	}
+
+	got, err = ParseParamFlags([]string{`expr=a=b`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["expr"] != "a=b" {
+		t.Fatalf("got expr=%q, want %q", got["expr"], "a=b")
+	}
+
+	got, err = ParseParamFlags([]string{"arr:ARRAY<STRING>", "legacy:42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLegacy := map[string]string{"arr": "ARRAY<STRING>", "legacy": "42"}
+	if diff := cmp.Diff(wantLegacy, got); diff != "" {
+		t.Fatalf("(-want +got)\n%s", diff)
+	}
+
+	got, err = ParseParamFlags([]string{`key:val=ue`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["key"] != "val=ue" {
+		t.Fatalf("got key=%q, want %q", got["key"], "val=ue")
 	}
 
 	if _, err := ParseParamFlags([]string{":value"}); err == nil {
