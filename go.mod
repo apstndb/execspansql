@@ -8,7 +8,7 @@ require (
 	github.com/apstndb/gsqlutils v0.0.0-20260502161854-d7d6011a36e0
 	github.com/apstndb/memebridge v0.6.1
 	github.com/apstndb/spanemuboost v0.4.6
-	github.com/apstndb/spaniter v0.3.0
+	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spannerotel v0.2.0
 	github.com/apstndb/spanvalue v0.8.0
 	github.com/cloudspannerecosystem/memefish v0.6.2
