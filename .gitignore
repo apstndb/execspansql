@@ -1,0 +1,16 @@
+# Local build and tooling outputs
+dist/
+.idea/
+.tmp/
+/execspansql
+
+# Ad-hoc scratch artifacts observed in repo usage
+enhanced_query*.sql
+fulltext*.sql
+singerinfo.sql
+test.sql
+types.sql
+test.json
+match3.gql
+match3.txt
+match3*.png
