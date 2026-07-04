@@ -11,7 +11,7 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
   * Query with query parameters
   * Large result sets over 10MB 
 * Embedded jq
-* Emit gRPC message logs
+* Configurable gRPC logging (`off`, `metadata`, `payload` with payload caveat)
 * (Experimental) CSV output
 * (Experimental) Check whether the query can be executed as a partition query or not.
 
@@ -21,41 +21,59 @@ This tool is still pre-release quality and none of guarantees.
 
 You can use [released binaries](https://github.com/apstndb/execspansql/releases).
 ```
-Usage:
-  execspansql [OPTIONS] [database]
+Usage: execspansql --sql=STRING --sql-file=STRING --project=STRING --instance=STRING <database> [flags]
 
-Application Options:
-      --sql=                                   SQL query text; exclusive with --sql-file.
-      --sql-file=                              File name contains SQL query; exclusive with --sql
-  -p, --project=                               (required) ID of the project. [$CLOUDSDK_CORE_PROJECT]
-  -i, --instance=                              (required) ID of the instance. [$CLOUDSDK_SPANNER_INSTANCE]
-      --query-mode=[NORMAL|PLAN|PROFILE]       Query mode. (default: NORMAL)
-      --format=[json|yaml|experimental_csv]    Output format. (default: json)
-      --redact-rows                            Redact result rows from output
-  -c, --compact-output                         Compact JSON output(--compact-output of jq)
-      --filter=                                jq filter
-  -r, --raw-output                             (--raw-output of jq)
-      --filter-file=                           (--from-file of jq)
-      --param=                                 [name]=[Cloud Spanner type(PLAN only) or literal]; legacy name:value OK
-      --param-file=                            YAML or JSON file of query parameters
-      --log-grpc                               Show gRPC logs
-      --experimental-trace-project=                Export traces to Cloud Trace
-      --experimental-trace-stdout                  Export spans to stderr as pretty JSON
-      --experimental-trace-otlp                    Export spans via OTLP/gRPC (local collector)
-      --experimental-trace-otlp-endpoint=          OTLP/gRPC endpoint (default: localhost:4317)
-      --enable-partitioned-dml                 Execute DML statement using Partitioned DML
-      --timeout=                               Maximum time to wait for the SQL query to complete (default: 10m)
-      --try-partition-query                    (Experimental) Check whether the query can be executed as partition query or not
-
-Timestamp Bound:
-      --strong                                 Perform a strong query.
-      --read-timestamp=TIMESTAMP               Perform a query at the given timestamp. (micro-seconds precision)
-
-Help Options:
-  -h, --help                                   Show this help message
+Yet another gcloud spanner databases execute-sql replacement
 
 Arguments:
-  database:                                    (required) ID of the database.
+  <database>    ID of the database.
+
+Flags:
+  -h, --help                       Show context-sensitive help.
+      --sql=STRING                 SQL query text; exclusive with --sql-file.
+      --sql-file=STRING            File name contains SQL query; exclusive with
+                                   --sql
+  -p, --project=STRING             ID of the project ($CLOUDSDK_CORE_PROJECT).
+  -i, --instance=STRING            ID of the instance
+                                   ($CLOUDSDK_SPANNER_INSTANCE).
+      --query-mode="NORMAL"        Query mode.
+      --format="json"              Output format.
+      --redact-rows                Redact result rows from output
+  -c, --compact-output             Compact JSON output (--compact-output of jq)
+      --filter=STRING              jq filter
+  -r, --raw-output                 (--raw-output of jq)
+      --filter-file=STRING         (--from-file of jq)
+      --jq-input-mode="eager"      How query rows are passed to jq (json/yaml
+                                   only): eager (full ResultSet), lazy (JQValue
+                                   root).
+      --param=PARAM,...            [name]=[type or literal]; legacy [name]:[...]
+                                   also accepted
+      --param-file=STRING          YAML or JSON file of query parameters (name
+                                   to type/literal string)
+      --log-grpc="off"             gRPC logging mode: off, metadata, or payload
+                                   (payload may include request and response
+                                   payloads in logs)
+      --experimental-trace-project=STRING
+                                   Export traces to Cloud Trace in the given
+                                   project.
+      --experimental-trace-stdout
+                                   Export spans to stderr as pretty JSON (local
+                                   debugging).
+      --experimental-trace-otlp    Export spans via OTLP/gRPC to a local
+                                   OpenTelemetry collector.
+      --experimental-trace-otlp-endpoint="localhost:4317"
+                                   OTLP/gRPC endpoint used with
+                                   --experimental-trace-otlp.
+      --enable-partitioned-dml     Execute DML statement using Partitioned DML
+      --timeout=10m                Maximum time to wait for the SQL query to
+                                   complete
+      --try-partition-query        (Experimental) Check whether the query can be
+                                   executed as partition query or not
+
+Timestamp Bound
+  --strong                   Perform a strong query.
+  --read-timestamp=STRING    Perform a query at the given timestamp.
+                             (micro-seconds precision)
 ```
 
 Local build requires Go 1.25.
@@ -70,7 +88,7 @@ $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.
     ghcr.io/apstndb/execspansql/execspansql:latest -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 # or use specific version
 $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.json:/home/nonroot/.config/gcloud/application_default_credentials.json:ro" \
-    ghcr.io/apstndb/execspansql/execspansql:v0.3.3 -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
+    ghcr.io/apstndb/execspansql/execspansql:vX.Y.Z -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 ```
 
 ## Notable features
@@ -144,6 +162,8 @@ execspansql can process output using embedded [wader/gojq](https://github.com/wa
 | `lazy` | `JQValue` root (`metadata` / `rows` Iter / `stats`) | `.rows[]`, `.stats.queryPlan` |
 
 In `lazy` mode, `metadata` is populated after the first row is read from Spanner (or after a zero-row result). Prefer `.rows[]` to stream rows. Bare `.rows` is a lazy iterator: reuse it in one object literal (for example `{a: .rows, b: .rows}`) may not duplicate rows because jq can evaluate the subexpression once; use `{a: [.rows[]], b: [.rows[]]}` when you need two row arrays. After `.stats` drains the iterator, captured `.rows` values replay from materialized rows.
+
+`--jq-input-mode=lazy` emits rows incrementally, but rows are cached internally after first materialization and reused, so it is not a strict constant-memory mode for large result sets.
 
 Output expands top-level `gojq.Iter` to one JSON/YAML document per row (JSONL-style). Nested `Iter` values inside objects are expanded to arrays on encode.
 
@@ -279,12 +299,17 @@ $ execspansql $DATABASE_ID --query-mode=PROFILE --sql 'SELECT 1' --experimental-
 ```
 
 Note: `--experimental-trace-stdout` writes to **stderr**, not stdout.
+Note: `--log-grpc=payload` can log request and response payloads (including bound parameters and row values) and should only be used in trusted environments.
 
 ![trace.png](docs/trace.png)
 
 ### (Experimental) `--try-partition-query`
 
 Check whether the query can be executed as partition query or not.
+
+By default this checks against the current schema using a strong read. Pass `--read-timestamp` to check partitionability against a historical schema within the database version retention window.
+
+`--try-partition-query` is a query-routing check and rejects jq-related options (`--filter`, `--filter-file`, `--raw-output`, `--compact-output`) and `--jq-input-mode=lazy`.
 
 ```
 $ execspansql ${DATABASE_ID} --sql='SELECT * FROM Singers JOIN Albums USING(SingerId)' --try-partition-query
@@ -298,4 +323,5 @@ exit status 1
 
 ## Limitations
 
-* Supports only json and yaml format
+* `--format=experimental_csv` does not run the jq pipeline; `--filter`, `--filter-file`, `--raw-output`, `--compact-output`, and `--jq-input-mode=lazy` are rejected.
+* `--raw-output` and `--compact-output` are supported only when `--format=json`.
