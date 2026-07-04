@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/apstndb/execspansql/params"
 	"io"
+	"strings"
 	"time"
 
 	"fmt"
@@ -26,12 +26,19 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/alecthomas/kong"
 	"github.com/apstndb/execspansql/jqresult"
+	"github.com/apstndb/execspansql/params"
 	"github.com/apstndb/execspansql/resultset"
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
 	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/wader/gojq"
+)
+
+const (
+	logGrpcModeOff      = "off"
+	logGrpcModeMetadata = "metadata"
+	logGrpcModePayload  = "payload"
 )
 
 func main() {
@@ -68,7 +75,7 @@ type opts struct {
 	JqInputMode          string        `name:"jq-input-mode" enum:"eager,lazy" default:"eager" help:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)."`
 	ParamFlags           []string      `name:"param" help:"[name]=[type or literal]; legacy [name]:[...] also accepted"`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
-	LogGrpc              bool          `name:"log-grpc" help:"Show gRPC logs"`
+	LogGrpc              string        `name:"log-grpc" enum:"off,metadata,payload" default:"off" help:"gRPC logging mode: off, metadata, or payload (payload may include request and response payloads in logs)"`
 	TraceProject         string        `name:"experimental-trace-project" xor:"trace" help:"Export traces to Cloud Trace in the given project."`
 	TraceStdout          bool          `name:"experimental-trace-stdout" xor:"trace" help:"Export spans to stderr as pretty JSON (local debugging)."`
 	TraceOTLP            bool          `name:"experimental-trace-otlp" xor:"trace" help:"Export spans via OTLP/gRPC to a local OpenTelemetry collector."`
@@ -127,16 +134,6 @@ func processFlags() (o opts, err error) {
 		}
 		return o, err
 	}
-
-	if o.TimestampBound.ReadTimestamp != "" {
-		if _, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp); err != nil {
-			return o, fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
-		}
-	}
-
-	if _, err := jqresult.ParseInputMode(o.JqInputMode); err != nil {
-		return o, err
-	}
 	return o, nil
 }
 
@@ -152,24 +149,146 @@ func readFileOrDefault(filename, s string) (string, error) {
 	return string(b), nil
 }
 
-func logGrpcClientOptions() []option.ClientOption {
+func parseTimestampBound(rawReadTimestamp string) (spanner.TimestampBound, error) {
+	if rawReadTimestamp == "" {
+		return spanner.StrongRead(), nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, rawReadTimestamp)
+	if err != nil {
+		return spanner.TimestampBound{}, err
+	}
+	return spanner.ReadTimestamp(parsed), nil
+}
+
+func stripLeadingComments(query string) string {
+	for {
+		query = strings.TrimLeft(query, " \t\r\n")
+		if query == "" {
+			return ""
+		}
+
+		switch {
+		case strings.HasPrefix(query, "--"):
+			if i := strings.IndexAny(query[2:], "\r\n"); i >= 0 {
+				query = query[2+i+1:]
+				continue
+			}
+			return ""
+		case strings.HasPrefix(query, "#"):
+			if i := strings.IndexAny(query[1:], "\r\n"); i >= 0 {
+				query = query[1+i+1:]
+				continue
+			}
+			return ""
+		case strings.HasPrefix(query, "/*"):
+			if i := strings.Index(query[2:], "*/"); i >= 0 {
+				query = query[i+4:]
+				continue
+			}
+			return ""
+		default:
+			return query
+		}
+	}
+}
+
+func isReadWriteStatement(query string) bool {
+	return stmtkind.IsDMLLexical(stripLeadingComments(query))
+}
+
+func queryModeForQuery(query string, enablePartitionedDML bool, tb spanner.TimestampBound) queryMode {
+	if enablePartitionedDML {
+		return partitionedDML{}
+	}
+	if isReadWriteStatement(query) {
+		return readWrite{}
+	}
+	return single{tb}
+}
+
+func validateExecutionOptions(o opts, mode queryMode) error {
+	if o.TryPartitionQuery {
+		if _, ok := mode.(single); !ok {
+			if o.EnablePartitionedDML {
+				return fmt.Errorf("--try-partition-query cannot be combined with --enable-partitioned-dml")
+			}
+			return fmt.Errorf("--try-partition-query cannot be used with DML statements")
+		}
+	}
+	if o.TimestampBound.ReadTimestamp != "" || o.TimestampBound.Strong {
+		if _, ok := mode.(single); !ok {
+			flagName := "--read-timestamp"
+			if o.TimestampBound.Strong {
+				flagName = "--strong"
+			}
+			if o.EnablePartitionedDML {
+				return fmt.Errorf("%s cannot be combined with --enable-partitioned-dml", flagName)
+			}
+			return fmt.Errorf("%s cannot be used with DML statements", flagName)
+		}
+	}
+	return nil
+}
+
+func validateJqOutputOptions(o opts, mode jqresult.InputMode) error {
+	if o.Format == "experimental_csv" {
+		if o.JqFilter != "" || o.JqFromFile != "" || o.JqRawOutput || o.CompactOutput || mode == jqresult.InputLazy {
+			return fmt.Errorf("--format=experimental_csv does not support jq filtering options")
+		}
+		return nil
+	}
+
+	if o.TryPartitionQuery {
+		if o.JqFilter != "" || o.JqFromFile != "" || o.JqRawOutput || o.CompactOutput || mode == jqresult.InputLazy {
+			return fmt.Errorf("--try-partition-query does not support jq filtering options")
+		}
+	}
+	if o.Format != "json" && (o.JqRawOutput || o.CompactOutput) {
+		return fmt.Errorf("--raw-output and --compact-output are only supported with --format=json")
+	}
+	return nil
+}
+
+func buildGrpcZapLogger(config zap.Config) *zap.Logger {
+	zapLogger, err := config.Build()
+	if err != nil {
+		return zap.NewNop()
+	}
+	return zapLogger
+}
+
+func logGrpcClientOptions(logGrpcMode string) []option.ClientOption {
 	zapDevelopmentConfig := zap.NewDevelopmentConfig()
 	zapDevelopmentConfig.DisableCaller = true
-	zapLogger, _ := zapDevelopmentConfig.Build(zap.Fields())
+	zapLogger := buildGrpcZapLogger(zapDevelopmentConfig)
 
-	return []option.ClientOption{
-		option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
-			grpczap.PayloadUnaryClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
-				return true
-			}),
-			grpczap.UnaryClientInterceptor(zapLogger),
-		)),
-		option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
-			grpczap.PayloadStreamClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
-				return true
-			}),
-			grpczap.StreamClientInterceptor(zapLogger),
-		)),
+	switch logGrpcMode {
+	case logGrpcModeMetadata:
+		return []option.ClientOption{
+			option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
+				grpczap.UnaryClientInterceptor(zapLogger),
+			)),
+			option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
+				grpczap.StreamClientInterceptor(zapLogger),
+			)),
+		}
+	case logGrpcModePayload:
+		return []option.ClientOption{
+			option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(
+				grpczap.PayloadUnaryClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
+					return true
+				}),
+				grpczap.UnaryClientInterceptor(zapLogger),
+			)),
+			option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(
+				grpczap.PayloadStreamClientInterceptor(zapLogger, func(ctx context.Context, fullMethodName string) bool {
+					return true
+				}),
+				grpczap.StreamClientInterceptor(zapLogger),
+			)),
+		}
+	default:
+		return nil
 	}
 }
 
@@ -245,24 +364,42 @@ func _main() error {
 	if err := jqMode.ValidateFormat(o.Format); err != nil {
 		return err
 	}
-
-	jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
-	if err != nil {
+	if err := validateJqOutputOptions(o, jqMode); err != nil {
 		return err
 	}
-	if jqFilter == "" {
-		jqFilter = jqresult.DefaultFilter(jqMode)
-	}
 
-	jqCode, err := jqresult.Compile(jqFilter, jqMode)
-	if err != nil {
-		return err
+	var (
+		jqCode *gojq.Code
+	)
+	if !o.TryPartitionQuery && o.Format != "experimental_csv" {
+		jqFilter, err := readFileOrDefault(o.JqFromFile, o.JqFilter)
+		if err != nil {
+			return err
+		}
+		if jqFilter == "" {
+			jqFilter = jqresult.DefaultFilter(jqMode)
+		}
+
+		jqCode, err = jqresult.Compile(jqFilter, jqMode)
+		if err != nil {
+			return err
+		}
 	}
 
 	mode := sppb.ExecuteSqlRequest_QueryMode(sppb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
 
 	query, err := readFileOrDefault(o.SqlFile, o.Sql)
 	if err != nil {
+		return err
+	}
+
+	tb, err := parseTimestampBound(o.TimestampBound.ReadTimestamp)
+	if err != nil {
+		return fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
+	}
+
+	m := queryModeForQuery(query, o.EnablePartitionedDML, tb)
+	if err := validateExecutionOptions(o, m); err != nil {
 		return err
 	}
 
@@ -281,9 +418,7 @@ func _main() error {
 		}()
 	}
 
-	logGrpc := o.LogGrpc
-
-	client, err := newClient(ctx, o.Project, o.Instance, o.Database, logGrpc, tracingEnabled(o))
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.LogGrpc, tracingEnabled(o))
 	if err != nil {
 		return err
 	}
@@ -296,27 +431,6 @@ func _main() error {
 	paramMap, err := params.GenerateParams(paramStrMap, mode == sppb.ExecuteSqlRequest_PLAN)
 	if err != nil {
 		return err
-	}
-
-	var tb spanner.TimestampBound
-	if o.TimestampBound.ReadTimestamp != "" {
-		ts, err := time.Parse(time.RFC3339Nano, o.TimestampBound.ReadTimestamp)
-		if err != nil {
-			return err
-		}
-		tb = spanner.ReadTimestamp(ts)
-	} else {
-		tb = spanner.StrongRead()
-	}
-
-	var m queryMode
-	switch {
-	case o.EnablePartitionedDML:
-		m = partitionedDML{}
-	case stmtkind.IsDMLLexical(query):
-		m = readWrite{}
-	default:
-		m = single{tb}
 	}
 
 	stmt := spanner.Statement{SQL: query, Params: paramMap}
@@ -433,12 +547,12 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 	return csvWriter.Flush()
 }
 
-func newClient(ctx context.Context, project, instance, database string, logGrpc bool, doTrace bool) (*spanner.Client, error) {
+func newClient(ctx context.Context, project, instance, database string, logGrpcMode string, doTrace bool) (*spanner.Client, error) {
 	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
 
 	var copts []option.ClientOption
-	if logGrpc {
-		copts = logGrpcClientOptions()
+	if logGrpcMode != logGrpcModeOff {
+		copts = logGrpcClientOptions(logGrpcMode)
 	}
 
 	if doTrace {

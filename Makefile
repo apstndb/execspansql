@@ -1,2 +1,13 @@
+build:
+	go build -v ./...
+
+lint:
+	golangci-lint run ./...
+
 test:
 	go test -v ./...
+
+update-golden:
+	go test -update-golden ./...
+
+.PHONY: build lint test update-golden
