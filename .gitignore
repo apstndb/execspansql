@@ -3,6 +3,7 @@ dist/
 .idea/
 .tmp/
 /execspansql
+/execspansql.exe
 
 # Ad-hoc scratch artifacts observed in repo usage
 enhanced_query*.sql

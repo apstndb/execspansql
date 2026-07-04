@@ -18,9 +18,9 @@ Primary package layout:
 - Full test suite: `go test ./...` (requires emulator/container environment for integration tests)
 - Lint: `golangci-lint run`
 - Golden files:
-  - Update CSV goldens: `go test -update-golden -run TestExperimentalCsvGolden ./...`
-  - Update YAML/profile goldens: `go test -update-golden -run TestYamlOutputGolden ./...`
-  - Update profile YAML goldens: `go test -update-golden -run TestProfileJSONToYamlGolden ./...`
+  - Update CSV goldens: `go test -update-golden -run TestExperimentalCsvGolden .`
+  - Update YAML/profile goldens: `go test -update-golden -run TestYamlOutputGolden .`
+  - Update profile YAML goldens: `go test -update-golden -run TestProfileJSONToYamlGolden .`
 
 ## Integration-test flow
 
@@ -45,4 +45,4 @@ For fast local checks without Docker dependency, limit to package-level tests as
 - Local scratch artifacts from this project's workflow (root-level files) should remain ignored:
   - SQL/JSON examples: `enhanced_query*.sql`, `fulltext*.sql`, `singerinfo.sql`, `test.sql`, `types.sql`, `test.json`
   - Match3 experiment outputs: `match3.gql`, `match3.txt`, `match3*.png`
-  - Built binary: `/execspansql`
+  - Built binary: `/execspansql` and `/execspansql.exe` on Windows
