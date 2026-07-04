@@ -189,6 +189,12 @@ func TestBuildGrpcZapLoggerFallback(t *testing.T) {
 	}
 }
 
+func optsWithReadTimestamp(ts string) opts {
+	var o opts
+	o.TimestampBound.ReadTimestamp = ts
+	return o
+}
+
 func TestValidateExecutionOptions(t *testing.T) {
 	t.Parallel()
 
@@ -219,30 +225,22 @@ func TestValidateExecutionOptions(t *testing.T) {
 		},
 		{
 			name: "read_timestamp_allows_single_query",
-			o: opts{TimestampBound: struct {
-				Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
-				ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
-			}{ReadTimestamp: "2025-01-01T00:00:00Z"}},
+			o:    optsWithReadTimestamp("2025-01-01T00:00:00Z"),
 			mode: single{queryTimestamp},
 		},
 		{
 			name: "read_timestamp_rejects_dml",
-			o: opts{TimestampBound: struct {
-				Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
-				ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
-			}{ReadTimestamp: "2025-01-01T00:00:00Z"}},
+			o:    optsWithReadTimestamp("2025-01-01T00:00:00Z"),
 			mode: readWrite{},
 			err:  "--read-timestamp cannot be used with DML statements",
 		},
 		{
 			name: "read_timestamp_rejects_partitioned_dml",
-			o: opts{
-				EnablePartitionedDML: true,
-				TimestampBound: struct {
-					Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
-					ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
-				}{ReadTimestamp: "2025-01-01T00:00:00Z"},
-			},
+			o: func() opts {
+				o := optsWithReadTimestamp("2025-01-01T00:00:00Z")
+				o.EnablePartitionedDML = true
+				return o
+			}(),
 			mode: partitionedDML{},
 			err:  "--read-timestamp cannot be combined with --enable-partitioned-dml",
 		},

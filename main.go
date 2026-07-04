@@ -247,7 +247,7 @@ func validateJqOutputOptions(o opts, mode jqresult.InputMode) error {
 }
 
 func buildGrpcZapLogger(config zap.Config) *zap.Logger {
-	zapLogger, err := config.Build(zap.Fields())
+	zapLogger, err := config.Build()
 	if err != nil {
 		return zap.NewNop()
 	}
