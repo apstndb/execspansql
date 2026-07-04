@@ -206,6 +206,26 @@ func queryModeForQuery(query string, enablePartitionedDML bool, tb spanner.Times
 	return single{tb}
 }
 
+func validateExecutionOptions(o opts, mode queryMode) error {
+	if o.TryPartitionQuery {
+		if _, ok := mode.(single); !ok {
+			if o.EnablePartitionedDML {
+				return fmt.Errorf("--try-partition-query cannot be combined with --enable-partitioned-dml")
+			}
+			return fmt.Errorf("--try-partition-query cannot be used with DML statements")
+		}
+	}
+	if o.TimestampBound.ReadTimestamp != "" {
+		if _, ok := mode.(single); !ok {
+			if o.EnablePartitionedDML {
+				return fmt.Errorf("--read-timestamp cannot be combined with --enable-partitioned-dml")
+			}
+			return fmt.Errorf("--read-timestamp cannot be used with DML statements")
+		}
+	}
+	return nil
+}
+
 func validateJqOutputOptions(o opts, mode jqresult.InputMode) error {
 	if o.Format != "json" && (o.JqRawOutput || o.CompactOutput) {
 		return fmt.Errorf("--raw-output and --compact-output are only supported with --format=json")
@@ -226,10 +246,18 @@ func validateJqOutputOptions(o opts, mode jqresult.InputMode) error {
 	return nil
 }
 
+func buildGrpcZapLogger(config zap.Config) *zap.Logger {
+	zapLogger, err := config.Build(zap.Fields())
+	if err != nil {
+		return zap.NewNop()
+	}
+	return zapLogger
+}
+
 func logGrpcClientOptions(logGrpcMode string) []option.ClientOption {
 	zapDevelopmentConfig := zap.NewDevelopmentConfig()
 	zapDevelopmentConfig.DisableCaller = true
-	zapLogger, _ := zapDevelopmentConfig.Build(zap.Fields())
+	zapLogger := buildGrpcZapLogger(zapDevelopmentConfig)
 
 	switch logGrpcMode {
 	case logGrpcModeMetadata:
@@ -367,6 +395,11 @@ func _main() error {
 		return fmt.Errorf("--read-timestamp is supplied but wrong: %w", err)
 	}
 
+	m := queryModeForQuery(query, o.EnablePartitionedDML, tb)
+	if err := validateExecutionOptions(o, m); err != nil {
+		return err
+	}
+
 	ctx, tp, traceCancel, err := enableTracing(ctx, o)
 	if err != nil {
 		return err
@@ -396,8 +429,6 @@ func _main() error {
 	if err != nil {
 		return err
 	}
-
-	m := queryModeForQuery(query, o.EnablePartitionedDML, tb)
 
 	stmt := spanner.Statement{SQL: query, Params: paramMap}
 

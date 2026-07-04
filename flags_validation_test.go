@@ -7,6 +7,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/execspansql/jqresult"
+	"go.uber.org/zap"
 )
 
 func TestValidateJqOutputOptions(t *testing.T) {
@@ -172,6 +173,95 @@ func TestLogGrpcClientOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := len(logGrpcClientOptions(tt.mode)); got != tt.want {
 				t.Fatalf("len(logGrpcClientOptions(%q)) = %d, want %d", tt.mode, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildGrpcZapLoggerFallback(t *testing.T) {
+	t.Parallel()
+
+	cfg := zap.NewDevelopmentConfig()
+	cfg.OutputPaths = []string{"unknown-sink://stderr"}
+
+	if got := buildGrpcZapLogger(cfg); got == nil {
+		t.Fatal("buildGrpcZapLogger() returned nil")
+	}
+}
+
+func TestValidateExecutionOptions(t *testing.T) {
+	t.Parallel()
+
+	queryTimestamp := spanner.ReadTimestamp(time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC))
+
+	tests := []struct {
+		name string
+		o    opts
+		mode queryMode
+		err  string
+	}{
+		{
+			name: "try_partition_allows_single_query",
+			o:    opts{TryPartitionQuery: true},
+			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "try_partition_rejects_dml",
+			o:    opts{TryPartitionQuery: true},
+			mode: readWrite{},
+			err:  "--try-partition-query cannot be used with DML statements",
+		},
+		{
+			name: "try_partition_rejects_partitioned_dml",
+			o:    opts{TryPartitionQuery: true, EnablePartitionedDML: true},
+			mode: partitionedDML{},
+			err:  "--try-partition-query cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "read_timestamp_allows_single_query",
+			o: opts{TimestampBound: struct {
+				Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
+				ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
+			}{ReadTimestamp: "2025-01-01T00:00:00Z"}},
+			mode: single{queryTimestamp},
+		},
+		{
+			name: "read_timestamp_rejects_dml",
+			o: opts{TimestampBound: struct {
+				Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
+				ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
+			}{ReadTimestamp: "2025-01-01T00:00:00Z"}},
+			mode: readWrite{},
+			err:  "--read-timestamp cannot be used with DML statements",
+		},
+		{
+			name: "read_timestamp_rejects_partitioned_dml",
+			o: opts{
+				EnablePartitionedDML: true,
+				TimestampBound: struct {
+					Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
+					ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
+				}{ReadTimestamp: "2025-01-01T00:00:00Z"},
+			},
+			mode: partitionedDML{},
+			err:  "--read-timestamp cannot be combined with --enable-partitioned-dml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateExecutionOptions(tt.o, tt.mode)
+			if tt.err == "" {
+				if err != nil {
+					t.Fatalf("validateExecutionOptions() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("validateExecutionOptions() expected error containing %q", tt.err)
+			}
+			if !strings.Contains(err.Error(), tt.err) {
+				t.Fatalf("validateExecutionOptions() error = %q, want %q", err, tt.err)
 			}
 		})
 	}
