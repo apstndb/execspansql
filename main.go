@@ -215,22 +215,22 @@ func validateExecutionOptions(o opts, mode queryMode) error {
 			return fmt.Errorf("--try-partition-query cannot be used with DML statements")
 		}
 	}
-	if o.TimestampBound.ReadTimestamp != "" {
+	if o.TimestampBound.ReadTimestamp != "" || o.TimestampBound.Strong {
 		if _, ok := mode.(single); !ok {
-			if o.EnablePartitionedDML {
-				return fmt.Errorf("--read-timestamp cannot be combined with --enable-partitioned-dml")
+			flagName := "--read-timestamp"
+			if o.TimestampBound.Strong {
+				flagName = "--strong"
 			}
-			return fmt.Errorf("--read-timestamp cannot be used with DML statements")
+			if o.EnablePartitionedDML {
+				return fmt.Errorf("%s cannot be combined with --enable-partitioned-dml", flagName)
+			}
+			return fmt.Errorf("%s cannot be used with DML statements", flagName)
 		}
 	}
 	return nil
 }
 
 func validateJqOutputOptions(o opts, mode jqresult.InputMode) error {
-	if o.Format != "json" && (o.JqRawOutput || o.CompactOutput) {
-		return fmt.Errorf("--raw-output and --compact-output are only supported with --format=json")
-	}
-
 	if o.Format == "experimental_csv" {
 		if o.JqFilter != "" || o.JqFromFile != "" || o.JqRawOutput || o.CompactOutput || mode == jqresult.InputLazy {
 			return fmt.Errorf("--format=experimental_csv does not support jq filtering options")
@@ -242,6 +242,9 @@ func validateJqOutputOptions(o opts, mode jqresult.InputMode) error {
 		if o.JqFilter != "" || o.JqFromFile != "" || o.JqRawOutput || o.CompactOutput || mode == jqresult.InputLazy {
 			return fmt.Errorf("--try-partition-query does not support jq filtering options")
 		}
+	}
+	if o.Format != "json" && (o.JqRawOutput || o.CompactOutput) {
+		return fmt.Errorf("--raw-output and --compact-output are only supported with --format=json")
 	}
 	return nil
 }

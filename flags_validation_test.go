@@ -61,7 +61,7 @@ func TestValidateJqOutputOptions(t *testing.T) {
 			name: "try_partition_compact_output_not_allowed",
 			o:    opts{Format: "yaml", TryPartitionQuery: true, CompactOutput: true},
 			mode: jqresult.InputEager,
-			err:  "--raw-output and --compact-output are only supported with --format=json",
+			err:  "--try-partition-query does not support jq filtering options",
 		},
 	}
 
@@ -195,6 +195,12 @@ func optsWithReadTimestamp(ts string) opts {
 	return o
 }
 
+func optsWithStrong() opts {
+	var o opts
+	o.TimestampBound.Strong = true
+	return o
+}
+
 func TestValidateExecutionOptions(t *testing.T) {
 	t.Parallel()
 
@@ -243,6 +249,22 @@ func TestValidateExecutionOptions(t *testing.T) {
 			}(),
 			mode: partitionedDML{},
 			err:  "--read-timestamp cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "strong_rejects_dml",
+			o:    optsWithStrong(),
+			mode: readWrite{},
+			err:  "--strong cannot be used with DML statements",
+		},
+		{
+			name: "strong_rejects_partitioned_dml",
+			o: func() opts {
+				o := optsWithStrong()
+				o.EnablePartitionedDML = true
+				return o
+			}(),
+			mode: partitionedDML{},
+			err:  "--strong cannot be combined with --enable-partitioned-dml",
 		},
 	}
 
