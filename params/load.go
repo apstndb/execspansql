@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,9 +138,9 @@ func paramFileValueToString(v any) (string, error) {
 		}
 		return "FALSE", nil
 	case float64:
-		return formatParamFloat(x), nil
+		return formatParamFloat(x)
 	case float32:
-		return formatParamFloat(float64(x)), nil
+		return formatParamFloat(float64(x))
 	case time.Time:
 		return fmt.Sprintf("TIMESTAMP %q", x.Format(time.RFC3339Nano)), nil
 	case []any, map[string]any, map[any]any:
@@ -149,15 +150,18 @@ func paramFileValueToString(v any) (string, error) {
 	}
 }
 
-func formatParamFloat(x float64) string {
-	s := fmt.Sprintf("%g", x)
-	if s == "NaN" || s == "+Inf" || s == "-Inf" {
-		return s
+func formatParamFloat(x float64) (string, error) {
+	if math.IsNaN(x) {
+		return "", fmt.Errorf("NaN is not a valid parameter value")
 	}
+	if math.IsInf(x, 0) {
+		return "", fmt.Errorf("infinity is not a valid parameter value")
+	}
+	s := fmt.Sprintf("%g", x)
 	if !strings.ContainsAny(s, ".eE") {
 		s += ".0"
 	}
-	return s
+	return s, nil
 }
 
 // MergeParams returns file params with cli params overriding on name conflict.

@@ -56,21 +56,19 @@ func traceConfig(o opts) (tracing.Config, error) {
 	}
 }
 
-func enableTracing(ctx context.Context, o opts) (context.Context, *sdktrace.TracerProvider, context.CancelFunc, error) {
+func enableTracing(ctx context.Context, o opts) (context.Context, *sdktrace.TracerProvider, error) {
 	if !tracingEnabled(o) {
-		return ctx, nil, nil, nil
+		return ctx, nil, nil
 	}
 	cfg, err := traceConfig(o)
 	if err != nil {
-		return ctx, nil, nil, err
+		return ctx, nil, err
 	}
 	tp, err := tracing.NewTracerProvider(cfg)
 	if err != nil {
-		return ctx, nil, nil, err
+		return ctx, nil, err
 	}
-
-	traceCtx, traceCancel := context.WithCancel(ctx)
-	return traceCtx, tp, traceCancel, nil
+	return ctx, tp, nil
 }
 
 func shutdownTracing(ctx context.Context, tp *sdktrace.TracerProvider) error {

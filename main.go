@@ -47,18 +47,6 @@ func main() {
 	}
 }
 
-var debuglog *log.Logger
-
-func init() {
-	if os.Getenv("DEBUG") != "" {
-		debuglog = log.New(os.Stderr, "", log.LstdFlags)
-	} else {
-		debuglog = log.New(io.Discard, "", log.LstdFlags)
-	}
-	// suppress
-	_ = debuglog
-}
-
 type opts struct {
 	Database             string        `arg:"" required:"" help:"ID of the database."`
 	Sql                  string        `name:"sql" xor:"sql" required:"" help:"SQL query text; exclusive with --sql-file."`
@@ -403,12 +391,9 @@ func _main() error {
 		return err
 	}
 
-	ctx, tp, traceCancel, err := enableTracing(ctx, o)
+	ctx, tp, err := enableTracing(ctx, o)
 	if err != nil {
 		return err
-	}
-	if traceCancel != nil {
-		defer traceCancel()
 	}
 	if tp != nil {
 		defer func() {
