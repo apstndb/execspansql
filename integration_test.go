@@ -75,7 +75,7 @@ func runEagerReadWriteDML(t *testing.T, client *spanner.Client, ctx context.Cont
 		if err != nil {
 			return err
 		}
-		code, err := jqresult.Compile(filter, jqresult.InputEager)
+		code, err := jqresult.Compile(filter)
 		if err != nil {
 			return err
 		}
@@ -374,7 +374,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 				spanner.Statement{SQL: "SELECT SingerId FROM Singers ORDER BY SingerId LIMIT 3"},
 				opts,
 			)
-			code, err := jqresult.Compile(filter, jqresult.InputLazy)
+			code, err := jqresult.Compile(filter)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -501,7 +501,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			code, err := jqresult.Compile("true", jqresult.InputEager)
+			code, err := jqresult.Compile("true")
 			if err != nil {
 				return err
 			}

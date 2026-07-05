@@ -7,7 +7,7 @@ import (
 func TestExecuteLazyNilRowIter(t *testing.T) {
 	t.Parallel()
 
-	code, err := Compile(".", InputLazy)
+	code, err := Compile(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func TestExecuteLazyNilRowIter(t *testing.T) {
 func TestExecuteEagerNilResultSet(t *testing.T) {
 	t.Parallel()
 
-	code, err := Compile(".", InputEager)
+	code, err := Compile(".")
 	if err != nil {
 		t.Fatal(err)
 	}
