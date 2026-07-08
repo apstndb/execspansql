@@ -69,14 +69,13 @@ func TestTraceFlagsMutuallyExclusiveViaKong(t *testing.T) {
 }
 
 func TestEnableTracingStdout(t *testing.T) {
-	ctx, tp, traceCancel, err := enableTracing(context.Background(), opts{TraceStdout: true})
+	ctx, tp, err := enableTracing(context.Background(), opts{TraceStdout: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tp == nil || traceCancel == nil {
-		t.Fatal("expected tracer provider and cancel func")
+	if tp == nil {
+		t.Fatal("expected tracer provider")
 	}
-	defer traceCancel()
 
 	_, span := tp.Tracer("execspansql").Start(ctx, "test-query")
 	span.End()

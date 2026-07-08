@@ -1,6 +1,7 @@
 package params
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,6 +106,51 @@ func TestLoadParamFile(t *testing.T) {
 	}
 	if _, err := LoadParamFile(nullPath); err == nil {
 		t.Fatal("expected error for untyped null in param file")
+	}
+}
+
+func TestFormatParamFloat(t *testing.T) {
+	t.Parallel()
+
+	s, err := formatParamFloat(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s != "42.0" {
+		t.Fatalf("got %q, want %q", s, "42.0")
+	}
+}
+
+func TestFormatParamFloatRejectsNonFinite(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		value float64
+	}{
+		{"NaN", math.NaN()},
+		{"positive infinity", math.Inf(1)},
+		{"negative infinity", math.Inf(-1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := formatParamFloat(tc.value); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestLoadParamFileRejectsNonFiniteFloat(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "params-nan.yaml")
+	if err := os.WriteFile(path, []byte("x: .nan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadParamFile(path); err == nil {
+		t.Fatal("expected error for NaN in param file")
 	}
 }
 
