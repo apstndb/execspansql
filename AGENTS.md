@@ -32,8 +32,8 @@ For fast local checks without Docker dependency, limit to package-level tests as
 
 - CI workflows include lint and Go build/test under `.github/workflows/`.
 - Lint workflow uses `golangci-lint`.
-- `ko` publish workflow builds on tag pushes for `v*`.
-- `.goreleaser.yaml` exists and should be treated as release automation metadata.
+- `ko` publish workflow builds container images on tag pushes for `v*`.
+- GoReleaser (`.goreleaser.yaml`, v2 schema) publishes cross-platform CLI archives via `.github/workflows/goreleaser.yml` on any tag push; `before.hooks` runs `go mod tidy` only (no `go:generate` in this repo).
 - Release/packaging behavior follows `go.mod` Go version pin (`go 1.25.0`).
 
 ## Repository hygiene
