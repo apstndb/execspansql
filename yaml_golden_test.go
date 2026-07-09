@@ -12,7 +12,7 @@ import (
 )
 
 func encodeResultSetYAML(filter string, rs *sppb.ResultSet) ([]byte, error) {
-	code, err := jqresult.Compile(filter)
+	code, err := jqresult.Compile(filter, jqresult.InputEager)
 	if err != nil {
 		return nil, err
 	}

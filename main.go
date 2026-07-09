@@ -380,7 +380,7 @@ func _main() error {
 			jqFilter = jqresult.DefaultFilter(jqMode)
 		}
 
-		jqCode, err = jqresult.Compile(jqFilter)
+		jqCode, err = jqresult.Compile(jqFilter, jqMode)
 		if err != nil {
 			return err
 		}
