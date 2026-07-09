@@ -266,6 +266,28 @@ func TestValidateExecutionOptions(t *testing.T) {
 			mode: partitionedDML{},
 			err:  "--strong cannot be combined with --enable-partitioned-dml",
 		},
+		{
+			name: "partitioned_dml_rejects_non_dml",
+			o:    opts{EnablePartitionedDML: true},
+			mode: single{spanner.StrongRead()},
+			err:  "--enable-partitioned-dml can only be used with DML statements",
+		},
+		{
+			name: "jq_lazy_allows_read_write_dml",
+			o:    opts{JqInputMode: "lazy"},
+			mode: readWrite{},
+		},
+		{
+			name: "partitioned_dml_allows_eager",
+			o:    opts{EnablePartitionedDML: true, JqInputMode: "eager"},
+			mode: partitionedDML{},
+		},
+		{
+			name: "partitioned_dml_rejects_lazy",
+			o:    opts{EnablePartitionedDML: true, JqInputMode: "lazy"},
+			mode: partitionedDML{},
+			err:  "--jq-input-mode=lazy is not supported for partitioned DML",
+		},
 	}
 
 	for _, tt := range tests {
@@ -303,6 +325,20 @@ func TestQueryModeForQuery(t *testing.T) {
 		{name: "dml_with_comment", query: "-- c\nUPDATE T SET X=1", partitionedEnabled: false, tb: tb, wantMode: "readWrite"},
 		{name: "partitioned_dml", query: "UPDATE T SET X=1", partitionedEnabled: true, tb: tb, wantMode: "partitionedDML"},
 		{name: "normal_query", query: "SELECT 1", partitionedEnabled: false, tb: candidateTimestamp, wantMode: "single"},
+		{
+			name:               "partitioned_flag_with_select",
+			query:              "SELECT 1",
+			partitionedEnabled: true,
+			tb:                 candidateTimestamp,
+			wantMode:           "single",
+		},
+		{
+			name:               "partitioned_flag_with_ddl",
+			query:              "CREATE TABLE T (K INT64) PRIMARY KEY (K)",
+			partitionedEnabled: true,
+			tb:                 tb,
+			wantMode:           "single",
+		},
 	}
 
 	for _, tt := range tests {
