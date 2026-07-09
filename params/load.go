@@ -100,10 +100,10 @@ func loadParamYAMLFile(b []byte) (map[string]string, error) {
 	var raw map[string]yaml.RawMessage
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	if err := dec.Decode(&raw); err != nil {
+		if errors.Is(err, io.EOF) {
+			return map[string]string{}, nil
+		}
 		return nil, fmt.Errorf("parse param file as YAML: %w", err)
-	}
-	if raw == nil {
-		return nil, fmt.Errorf("parse param file as YAML: top-level value must be a mapping")
 	}
 	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
 		if err != nil {

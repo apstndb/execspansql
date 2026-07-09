@@ -116,16 +116,37 @@ func TestLoadParamFileAcceptsSingleMappingDocument(t *testing.T) {
 		name     string
 		filename string
 		content  string
+		want     map[string]string
 	}{
 		{
 			name:     "JSON with trailing whitespace",
 			filename: "params.json",
 			content:  "{}  \n\t",
+			want:     map[string]string{},
 		},
 		{
 			name:     "YAML empty mapping",
 			filename: "params.yaml",
 			content:  "{}\n",
+			want:     map[string]string{},
+		},
+		{
+			name:     "YAML comments only",
+			filename: "params.yaml",
+			content:  "# no parameters yet\n",
+			want:     map[string]string{},
+		},
+		{
+			name:     "YAML empty document marker",
+			filename: "params.yaml",
+			content:  "---\n",
+			want:     map[string]string{},
+		},
+		{
+			name:     "YAML trailing empty document marker",
+			filename: "params.yaml",
+			content:  "x: INT64\n---\n",
+			want:     map[string]string{"x": "INT64"},
 		},
 	}
 
@@ -141,8 +162,8 @@ func TestLoadParamFileAcceptsSingleMappingDocument(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got == nil || len(got) != 0 {
-				t.Fatalf("expected an empty map, got %v", got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("LoadParamFile() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
