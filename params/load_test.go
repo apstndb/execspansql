@@ -109,6 +109,95 @@ func TestLoadParamFile(t *testing.T) {
 	}
 }
 
+func TestLoadParamFileAcceptsSingleMappingDocument(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+	}{
+		{
+			name:     "JSON with trailing whitespace",
+			filename: "params.json",
+			content:  "{}  \n\t",
+		},
+		{
+			name:     "YAML empty mapping",
+			filename: "params.yaml",
+			content:  "{}\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), tc.filename)
+			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := LoadParamFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil || len(got) != 0 {
+				t.Fatalf("expected an empty map, got %v", got)
+			}
+		})
+	}
+}
+
+func TestLoadParamFileRejectsInvalidDocuments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+	}{
+		{
+			name:     "JSON trailing non-whitespace content",
+			filename: "params.json",
+			content:  `{"x":1} trailing`,
+		},
+		{
+			name:     "JSON second value",
+			filename: "params.json",
+			content:  `{"x":1} {"y":2}`,
+		},
+		{
+			name:     "JSON top-level null",
+			filename: "params.json",
+			content:  `null`,
+		},
+		{
+			name:     "YAML second document",
+			filename: "params.yaml",
+			content:  "x: 1\n---\ny: 2\n",
+		},
+		{
+			name:     "YAML top-level null",
+			filename: "params.yaml",
+			content:  "null\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), tc.filename)
+			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadParamFile(path); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
 func TestFormatParamFloat(t *testing.T) {
 	t.Parallel()
 
