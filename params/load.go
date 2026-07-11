@@ -3,7 +3,9 @@ package params
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"math"
 	"os"
@@ -71,6 +73,15 @@ func LoadParamFile(path string) (map[string]string, error) {
 		if err := dec.Decode(&raw); err != nil {
 			return nil, fmt.Errorf("parse param file as JSON: %w", err)
 		}
+		if raw == nil {
+			return nil, fmt.Errorf("parse param file as JSON: top-level value must be a mapping")
+		}
+		if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+			if err != nil {
+				return nil, fmt.Errorf("parse param file as JSON: %w", err)
+			}
+			return nil, fmt.Errorf("parse param file as JSON: multiple top-level values")
+		}
 	default:
 		return loadParamYAMLFile(b)
 	}
@@ -87,8 +98,18 @@ func LoadParamFile(path string) (map[string]string, error) {
 
 func loadParamYAMLFile(b []byte) (map[string]string, error) {
 	var raw map[string]yaml.RawMessage
-	if err := yaml.Unmarshal(b, &raw); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	if err := dec.Decode(&raw); err != nil {
+		if errors.Is(err, io.EOF) {
+			return map[string]string{}, nil
+		}
 		return nil, fmt.Errorf("parse param file as YAML: %w", err)
+	}
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("parse param file as YAML: %w", err)
+		}
+		return nil, fmt.Errorf("parse param file as YAML: multiple documents are not supported")
 	}
 	out := make(map[string]string, len(raw))
 	for k, msg := range raw {
