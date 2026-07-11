@@ -1,9 +1,6 @@
 package jqresult
 
 import (
-	"encoding/json"
-	"math/big"
-
 	"github.com/wader/gojq"
 )
 
@@ -42,9 +39,6 @@ func NormalizeForEncode(v any) (any, error) {
 		}
 		return out, nil
 	default:
-		if isEncodeLeaf(v) {
-			return v, nil
-		}
 		return v, nil
 	}
 }
@@ -63,17 +57,4 @@ func normalizeIter(it gojq.Iter) ([]any, error) {
 		out = append(out, n)
 	}
 	return out, nil
-}
-
-// isEncodeLeaf reports values that cannot contain gojq.Iter and need no further normalization.
-func isEncodeLeaf(v any) bool {
-	switch v.(type) {
-	case nil, bool, int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64,
-		float32, float64, string,
-		json.Number, *big.Int:
-		return true
-	default:
-		return false
-	}
 }

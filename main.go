@@ -586,6 +586,7 @@ func runJqOutput(
 	jqCode *gojq.Code,
 ) error {
 	useEager := jqMode == jqresult.InputEager
+	// Read-write DML always materializes the full result set before jq runs.
 	if _, ok := mode.(readWrite); ok {
 		useEager = true
 	}
@@ -608,8 +609,6 @@ func runJqOutput(
 	}
 
 	switch mode := mode.(type) {
-	case readWrite:
-		panic("read-write jq uses eager materialization")
 	case single:
 		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
 		if err != nil {
