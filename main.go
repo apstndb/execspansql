@@ -185,10 +185,10 @@ func isReadWriteStatement(query string) bool {
 }
 
 func queryModeForQuery(query string, enablePartitionedDML bool, tb spanner.TimestampBound) queryMode {
-	if enablePartitionedDML {
-		return partitionedDML{}
-	}
 	if isReadWriteStatement(query) {
+		if enablePartitionedDML {
+			return partitionedDML{}
+		}
 		return readWrite{}
 	}
 	return single{tb}
@@ -214,6 +214,14 @@ func validateExecutionOptions(o opts, mode queryMode) error {
 			}
 			return fmt.Errorf("%s cannot be used with DML statements", flagName)
 		}
+	}
+	if o.EnablePartitionedDML {
+		if _, ok := mode.(partitionedDML); !ok {
+			return fmt.Errorf("--enable-partitioned-dml can only be used with DML statements")
+		}
+	}
+	if _, ok := mode.(partitionedDML); ok && o.JqInputMode == "lazy" {
+		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
 	}
 	return nil
 }
