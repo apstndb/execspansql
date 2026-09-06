@@ -17,8 +17,7 @@ func TestLoadParamFileFixtures(t *testing.T) {
 		{
 			file: "testdata/readme_example.yaml",
 			want: map[string]string{
-				"arr":   "ARRAY<STRING>",
-				"names": `[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]`,
+				"arr": `["foo", "bar"]`,
 			},
 		},
 		{
@@ -107,7 +106,6 @@ func TestMergeParamsWithFixture(t *testing.T) {
 	got := MergeParams(file, map[string]string{"arr": "ARRAY<INT64>", "extra": "1"})
 	want := map[string]string{
 		"arr":   "ARRAY<INT64>",
-		"names": `[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]`,
 		"extra": "1",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
