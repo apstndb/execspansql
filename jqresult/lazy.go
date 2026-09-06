@@ -334,6 +334,10 @@ func (l *Lazy) Stop() {
 type lazyRowsField struct {
 	l   *Lazy
 	mat gojq.Iter
+	// pos is the number of rows this view has already emitted. When stats
+	// drain finishes the shared stream, replay must resume here instead of
+	// rewinding to cache offset zero (which would duplicate already emitted rows).
+	pos int
 }
 
 func (f *lazyRowsField) cachedRows() ([]any, error) {
@@ -489,8 +493,12 @@ func (f *lazyRowsField) Next() (any, bool) {
 	if redact || drained || f.l.rowsStreamDone {
 		if f.mat == nil {
 			rows := append([]any(nil), f.l.materializedRows...)
+			start := f.pos
 			f.l.mu.Unlock()
-			f.mat = materializedRowsIter(rows)
+			if start > len(rows) {
+				start = len(rows)
+			}
+			f.mat = materializedRowsIter(rows[start:])
 			return f.mat.Next()
 		}
 		f.l.mu.Unlock()
@@ -515,6 +523,7 @@ func (f *lazyRowsField) Next() (any, bool) {
 	}
 	f.l.mu.Lock()
 	f.l.materializedRows = append(f.l.materializedRows, v)
+	f.pos++
 	f.l.mu.Unlock()
 	return v, true
 }
