@@ -123,8 +123,7 @@ $ execspansql ${DATABASE_ID} --query-mode=PLAN \
 
 ```yaml
 # params.yaml
-arr: ARRAY<STRING>
-names: '[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
+arr: '["foo", "bar"]'
 ```
 
 ```
@@ -325,3 +324,4 @@ exit status 1
 
 * `--format=experimental_csv` does not run the jq pipeline; `--filter`, `--filter-file`, `--raw-output`, `--compact-output`, and `--jq-input-mode=lazy` are rejected.
 * `--raw-output` and `--compact-output` are supported only when `--format=json`.
+* `--query-mode=PLAN` and `--query-mode=PROFILE` cannot be combined with `--enable-partitioned-dml`. The Partitioned DML client path ignores query mode and would execute writes.

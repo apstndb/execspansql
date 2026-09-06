@@ -219,6 +219,12 @@ func validateExecutionOptions(o opts, mode queryMode) error {
 		if _, ok := mode.(partitionedDML); !ok {
 			return fmt.Errorf("--enable-partitioned-dml can only be used with DML statements")
 		}
+		// PartitionedUpdateWithOptions does not copy QueryOptions.Mode, so PLAN
+		// and PROFILE would execute writes instead of returning a plan or profile.
+		switch o.QueryMode {
+		case "PLAN", "PROFILE":
+			return fmt.Errorf("--query-mode=%s cannot be combined with --enable-partitioned-dml", o.QueryMode)
+		}
 	}
 	if _, ok := mode.(partitionedDML); ok && o.JqInputMode == "lazy" {
 		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")

@@ -288,6 +288,61 @@ func TestValidateExecutionOptions(t *testing.T) {
 			mode: partitionedDML{},
 			err:  "--jq-input-mode=lazy is not supported for partitioned DML",
 		},
+		{
+			name: "plan_allows_read_write_dml",
+			o:    opts{QueryMode: "PLAN"},
+			mode: readWrite{},
+		},
+		{
+			name: "profile_allows_read_write_dml",
+			o:    opts{QueryMode: "PROFILE"},
+			mode: readWrite{},
+		},
+		{
+			name: "plan_rejects_partitioned_dml",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "PLAN"},
+			mode: partitionedDML{},
+			err:  "--query-mode=PLAN cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "profile_rejects_partitioned_dml",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "PROFILE"},
+			mode: partitionedDML{},
+			err:  "--query-mode=PROFILE cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "plan_rejects_partitioned_dml_json",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "PLAN", Format: "json"},
+			mode: partitionedDML{},
+			err:  "--query-mode=PLAN cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "profile_rejects_partitioned_dml_yaml",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "PROFILE", Format: "yaml"},
+			mode: partitionedDML{},
+			err:  "--query-mode=PROFILE cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "plan_rejects_partitioned_dml_csv",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "PLAN", Format: "experimental_csv"},
+			mode: partitionedDML{},
+			err:  "--query-mode=PLAN cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "normal_allows_partitioned_dml_json",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "NORMAL", Format: "json"},
+			mode: partitionedDML{},
+		},
+		{
+			name: "normal_allows_partitioned_dml_yaml",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "NORMAL", Format: "yaml"},
+			mode: partitionedDML{},
+		},
+		{
+			name: "normal_allows_partitioned_dml_csv",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "NORMAL", Format: "experimental_csv"},
+			mode: partitionedDML{},
+		},
 	}
 
 	for _, tt := range tests {

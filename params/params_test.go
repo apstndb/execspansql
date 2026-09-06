@@ -45,3 +45,32 @@ func TestGenerateParamsPermitType(t *testing.T) {
 		t.Fatalf("expected typed null value, got %v", v.Value)
 	}
 }
+
+func TestReadmeExampleProfileParams(t *testing.T) {
+	t.Parallel()
+
+	file, err := LoadParamFile("testdata/readme_example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// README documents --query-mode=PROFILE, which calls GenerateParams(..., false).
+	got, err := GenerateParams(file, false)
+	if err != nil {
+		t.Fatalf("GenerateParams(PROFILE) for README example: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("README PROFILE example params = %v, want exactly arr", got)
+	}
+
+	arr, ok := got["arr"].(spanner.GenericColumnValue)
+	if !ok {
+		t.Fatalf("arr: expected GenericColumnValue, got %T", got["arr"])
+	}
+	if arr.Type.GetCode() != sppb.TypeCode_ARRAY || arr.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRING {
+		t.Fatalf("arr type = %v, want ARRAY<STRING>", arr.Type)
+	}
+	vals := arr.Value.GetListValue().GetValues()
+	if len(vals) != 2 || vals[0].GetStringValue() != "foo" || vals[1].GetStringValue() != "bar" {
+		t.Fatalf("arr values = %v, want [foo bar]", vals)
+	}
+}
