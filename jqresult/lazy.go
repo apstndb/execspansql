@@ -363,20 +363,22 @@ func (f *lazyRowsField) materializeSlice() (any, error) {
 		return f.cachedRows()
 	}
 
-	var out []any
+	// Consume remaining live rows from this view's position, then return the
+	// full cached prefix plus those rows. A captured view that already emitted
+	// some values must still report the complete array for length/index.
 	for {
 		v, ok := f.Next()
 		if !ok {
 			if err, isErr := v.(error); isErr {
 				return nil, err
 			}
-			return out, nil
+			break
 		}
 		if err, isErr := v.(error); isErr {
 			return nil, err
 		}
-		out = append(out, v)
 	}
+	return f.cachedRows()
 }
 
 func (f *lazyRowsField) JQValueType() string { return gojq.JQTypeArray }
@@ -488,25 +490,38 @@ func (f *lazyRowsField) JQValueEach() any {
 
 func (f *lazyRowsField) Next() (any, bool) {
 	f.l.mu.Lock()
-	drained := f.l.drained
-	redact := f.l.redact
-	if redact || drained || f.l.rowsStreamDone {
+	if f.l.redact {
 		if f.mat == nil {
-			rows := append([]any(nil), f.l.materializedRows...)
-			start := f.pos
 			f.l.mu.Unlock()
-			if start > len(rows) {
-				start = len(rows)
-			}
-			f.mat = materializedRowsIter(rows[start:])
+			f.mat = materializedRowsIter([]any{})
 			return f.mat.Next()
 		}
 		f.l.mu.Unlock()
 		return f.mat.Next()
 	}
+	if v, ok := f.nextCachedLocked(); ok {
+		f.l.mu.Unlock()
+		return v, true
+	}
+	if f.l.drained || f.l.rowsStreamDone {
+		f.l.mu.Unlock()
+		return nil, false
+	}
 	f.l.mu.Unlock()
 
 	f.l.ioMu.Lock()
+	f.l.mu.Lock()
+	if v, ok := f.nextCachedLocked(); ok {
+		f.l.mu.Unlock()
+		f.l.ioMu.Unlock()
+		return v, true
+	}
+	if f.l.drained || f.l.rowsStreamDone {
+		f.l.mu.Unlock()
+		f.l.ioMu.Unlock()
+		return nil, false
+	}
+	f.l.mu.Unlock()
 	v, ok := f.l.rows.nextUnlocked()
 	f.l.ioMu.Unlock()
 	if !ok {
@@ -525,6 +540,18 @@ func (f *lazyRowsField) Next() (any, bool) {
 	f.l.materializedRows = append(f.l.materializedRows, v)
 	f.pos++
 	f.l.mu.Unlock()
+	return v, true
+}
+
+// nextCachedLocked returns the next already-materialized row for this view.
+// Fresh views start at pos 0 so they replay the cached prefix before pulling
+// more live rows. Caller must hold f.l.mu.
+func (f *lazyRowsField) nextCachedLocked() (any, bool) {
+	if f.pos >= len(f.l.materializedRows) {
+		return nil, false
+	}
+	v := f.l.materializedRows[f.pos]
+	f.pos++
 	return v, true
 }
 
