@@ -58,6 +58,9 @@ func TestReadmeExampleProfileParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateParams(PROFILE) for README example: %v", err)
 	}
+	if len(got) != 1 {
+		t.Fatalf("README PROFILE example params = %v, want exactly arr", got)
+	}
 
 	arr, ok := got["arr"].(spanner.GenericColumnValue)
 	if !ok {
@@ -66,18 +69,8 @@ func TestReadmeExampleProfileParams(t *testing.T) {
 	if arr.Type.GetCode() != sppb.TypeCode_ARRAY || arr.Type.GetArrayElementType().GetCode() != sppb.TypeCode_STRING {
 		t.Fatalf("arr type = %v, want ARRAY<STRING>", arr.Type)
 	}
-
-	names, ok := got["names"].(spanner.GenericColumnValue)
-	if !ok {
-		t.Fatalf("names: expected GenericColumnValue, got %T", got["names"])
-	}
-	if names.Type.GetCode() != sppb.TypeCode_ARRAY {
-		t.Fatalf("names type = %v, want ARRAY", names.Type)
-	}
-	st := names.Type.GetArrayElementType().GetStructType()
-	if st == nil || len(st.Fields) != 2 ||
-		st.Fields[0].GetName() != "FirstName" || st.Fields[0].GetType().GetCode() != sppb.TypeCode_STRING ||
-		st.Fields[1].GetName() != "LastName" || st.Fields[1].GetType().GetCode() != sppb.TypeCode_STRING {
-		t.Fatalf("names element type = %v, want STRUCT<FirstName STRING, LastName STRING>", names.Type.GetArrayElementType())
+	vals := arr.Value.GetListValue().GetValues()
+	if len(vals) != 2 || vals[0].GetStringValue() != "foo" || vals[1].GetStringValue() != "bar" {
+		t.Fatalf("arr values = %v, want [foo bar]", vals)
 	}
 }

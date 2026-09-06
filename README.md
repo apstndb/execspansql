@@ -124,7 +124,6 @@ $ execspansql ${DATABASE_ID} --query-mode=PLAN \
 ```yaml
 # params.yaml
 arr: '["foo", "bar"]'
-names: '[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'
 ```
 
 ```
