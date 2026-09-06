@@ -1,3 +1,3 @@
 # params.yaml from README (--param-file example)
-arr: ARRAY<STRING>
+arr: '["foo", "bar"]'
 names: '[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]'

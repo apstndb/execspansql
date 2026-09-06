@@ -17,7 +17,7 @@ func TestLoadParamFileFixtures(t *testing.T) {
 		{
 			file: "testdata/readme_example.yaml",
 			want: map[string]string{
-				"arr":   "ARRAY<STRING>",
+				"arr":   `["foo", "bar"]`,
 				"names": `[STRUCT<FirstName STRING, LastName STRING>("John", "Doe"), ("Mary", "Sue")]`,
 			},
 		},
