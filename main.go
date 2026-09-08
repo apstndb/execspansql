@@ -402,6 +402,11 @@ func runInNewTransaction(ctx context.Context, client *spanner.Client, stmt spann
 }
 
 func _main() error {
+	return runCLI()
+}
+
+// runCLI accepts client options so transport tests can inspect outgoing RPCs.
+func runCLI(clientOptions ...option.ClientOption) error {
 	o, err := processFlags()
 	if err != nil {
 		os.Exit(1)
@@ -469,7 +474,7 @@ func _main() error {
 		}()
 	}
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, o.LogGrpc, tracingEnabled(o))
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, o.LogGrpc, tracingEnabled(o), clientOptions...)
 	if err != nil {
 		return err
 	}
@@ -598,7 +603,7 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 	return csvWriter.Flush()
 }
 
-func newClient(ctx context.Context, project, instance, database, databaseRole string, logGrpcMode string, doTrace bool) (*spanner.Client, error) {
+func newClient(ctx context.Context, project, instance, database, databaseRole string, logGrpcMode string, doTrace bool, clientOptions ...option.ClientOption) (*spanner.Client, error) {
 	name, err := databaseResourceName(project, instance, database)
 	if err != nil {
 		return nil, err
@@ -612,7 +617,7 @@ func newClient(ctx context.Context, project, instance, database, databaseRole st
 	if doTrace {
 		copts = append(copts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptor.StreamInterceptor(interceptor.WithDefaultDecorators()))))
 	}
-	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{DatabaseRole: databaseRole}, copts...)
+	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{DatabaseRole: databaseRole}, append(copts, clientOptions...)...)
 }
 
 type encoder interface {

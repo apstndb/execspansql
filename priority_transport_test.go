@@ -2,58 +2,28 @@ package main
 
 import (
 	"context"
-	"net"
+
 	"strings"
 	"testing"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"google.golang.org/grpc"
+	"github.com/apstndb/execspansql/internal/grpctest"
+	"github.com/apstndb/spanemuboost"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
-type priorityRecordingSpannerServer struct {
-	sppb.UnimplementedSpannerServer
-	requests chan *sppb.ExecuteSqlRequest
-}
-
-func (s *priorityRecordingSpannerServer) CreateSession(_ context.Context, req *sppb.CreateSessionRequest) (*sppb.Session, error) {
-	return &sppb.Session{Name: req.Database + "/sessions/priority-test"}, nil
-}
-
-func (*priorityRecordingSpannerServer) BeginTransaction(context.Context, *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
-	return &sppb.Transaction{Id: []byte("priority-test")}, nil
-}
-
-func (s *priorityRecordingSpannerServer) ExecuteStreamingSql(req *sppb.ExecuteSqlRequest, _ sppb.Spanner_ExecuteStreamingSqlServer) error {
-	s.requests <- req
-	return status.Error(codes.InvalidArgument, "priority test capture")
-}
-
-func (s *priorityRecordingSpannerServer) ExecuteSql(_ context.Context, req *sppb.ExecuteSqlRequest) (*sppb.ResultSet, error) {
-	s.requests <- req
-	return nil, status.Error(codes.InvalidArgument, "priority test capture")
-}
-
-func startPriorityRecordingSpannerServer(t *testing.T) (*priorityRecordingSpannerServer, string) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+func TestMainSendsPriorityOnExecuteSQL(t *testing.T) {
+	env, err := spanemuboost.RunEmulatorWithClients(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
-	recorder := &priorityRecordingSpannerServer{requests: make(chan *sppb.ExecuteSqlRequest, 1)}
-	sppb.RegisterSpannerServer(server, recorder)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return recorder, listener.Addr().String()
-}
+	defer env.Close() //nolint:errcheck
+	t.Setenv("SPANNER_EMULATOR_HOST", env.Emulator().URI())
 
-func TestMainSendsPriorityOnExecuteSQL(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
@@ -69,22 +39,31 @@ func TestMainSendsPriorityOnExecuteSQL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			recorder, host := startPriorityRecordingSpannerServer(t)
-			t.Setenv("SPANNER_EMULATOR_HOST", host)
+			requests := make(chan *sppb.ExecuteSqlRequest, 1)
+			dialOptions := grpctest.Inspect(func(_ string, req any) error {
+				if req, ok := req.(*sppb.ExecuteSqlRequest); ok {
+					select {
+					case requests <- proto.Clone(req).(*sppb.ExecuteSqlRequest):
+					default:
+					}
+					return status.Error(codes.InvalidArgument, "priority test capture")
+				}
+				return nil
+			})
 
 			sql := tt.sql
 			if sql == "" {
 				sql = "SELECT 1"
 			}
-			args := []string{"database", "--project", "project", "--instance", "instance", "--sql", sql, "--timeout", "5s"}
+			args := []string{env.DatabaseID, "--project", env.ProjectID, "--instance", env.InstanceID, "--sql", sql, "--timeout", "5s"}
 			args = append(args, tt.args...)
-			err := runMain(t, args)
+			err := runMain(t, args, option.WithGRPCDialOption(dialOptions[0]), option.WithGRPCDialOption(dialOptions[1]))
 			if err == nil || !strings.Contains(err.Error(), "priority test capture") {
 				t.Fatalf("_main() error = %v, want priority test capture", err)
 			}
 
 			select {
-			case req := <-recorder.requests:
+			case req := <-requests:
 				if got := req.GetRequestOptions().GetPriority(); got != tt.priority {
 					t.Fatalf("request priority = %v, want %v", got, tt.priority)
 				}

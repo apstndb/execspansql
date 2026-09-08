@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"github.com/apstndb/execspansql/internal/grpctest"
+	"github.com/apstndb/spanemuboost"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"net"
 	"strings"
-	"sync"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
@@ -54,7 +59,7 @@ func TestQueryStatsModesPreserveDMLCounts(t *testing.T) {
 	}
 }
 
-func TestAdditionalQueryStatsModesReachSpannerAndProduceStats(t *testing.T) {
+func TestQueryStatsResponseReachesOutput(t *testing.T) {
 	server := &queryStatsModeServer{}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -69,71 +74,46 @@ func TestAdditionalQueryStatsModesReachSpannerAndProduceStats(t *testing.T) {
 	})
 	t.Setenv("SPANNER_EMULATOR_HOST", listener.Addr().String())
 
-	for _, queryMode := range []string{"WITH_PLAN_AND_STATS", "WITH_STATS"} {
-		for _, tc := range []struct {
-			name   string
-			format string
-			lazy   bool
-		}{
-			{name: "json_eager", format: "json"},
-			{name: "yaml_eager", format: "yaml"},
-			{name: "json_lazy", format: "json", lazy: true},
-			{name: "yaml_lazy", format: "yaml", lazy: true},
-		} {
-			queryMode := queryMode
-			tc := tc
-			t.Run(queryMode+"_"+tc.name, func(t *testing.T) {
-				server.resetModes()
-				args := []string{
-					"database", "--project", "project", "--instance", "instance", "--sql", "SELECT 'value'",
-					"--query-mode", queryMode, "--format", tc.format, "--timeout", "5s",
-				}
-				if tc.lazy {
-					args = append(args, "--jq-input-mode", "lazy", "--filter", ".stats.queryStats.mode")
-				}
-				out, err := captureStdout(t, func() error { return runMain(t, args) })
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !strings.Contains(out, queryMode) {
-					t.Fatalf("output = %q, want query stats containing %q", out, queryMode)
-				}
-				if !tc.lazy {
-					if !strings.Contains(out, "value") {
-						t.Fatalf("eager output = %q, want row value", out)
-					}
-					if queryMode == "WITH_PLAN_AND_STATS" && !strings.Contains(out, "Fake Scan") {
-						t.Fatalf("WITH_PLAN_AND_STATS output = %q, want fake query plan", out)
-					}
-					if queryMode == "WITH_STATS" && strings.Contains(out, "Fake Scan") {
-						t.Fatalf("WITH_STATS output = %q, got unexpected query plan", out)
-					}
-				}
-				modes := server.modes()
-				if len(modes) != 1 || modes[0].String() != queryMode {
-					t.Fatalf("received query modes = %v, want [%s]", modes, queryMode)
-				}
-			})
+	// Two smoke cases cover the distinct eager and lazy SDK-to-output paths.
+	// Plan/stat combinations are covered without a server in jqresult tests.
+	for _, lazy := range []bool{false, true} {
+		name := "eager"
+		if lazy {
+			name = "lazy"
 		}
+		t.Run(name, func(t *testing.T) {
+			args := []string{
+				"database", "--project", "project", "--instance", "instance", "--sql", "SELECT 'value'",
+				"--query-mode", "WITH_PLAN_AND_STATS", "--format", "json", "--timeout", "5s",
+			}
+			if lazy {
+				args = append(args, "--jq-input-mode", "lazy", "--filter", ".stats")
+			}
+			out, err := captureStdout(t, func() error { return runMain(t, args) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"test stats", "Fake Scan"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("output = %q, want %q", out, want)
+				}
+			}
+			if !lazy && !strings.Contains(out, "value") {
+				t.Fatalf("eager output = %q, want row value", out)
+			}
+		})
 	}
 }
 
 type queryStatsModeServer struct {
 	sppb.UnimplementedSpannerServer
-
-	mu            sync.Mutex
-	receivedModes []sppb.ExecuteSqlRequest_QueryMode
 }
 
 func (s *queryStatsModeServer) CreateSession(_ context.Context, req *sppb.CreateSessionRequest) (*sppb.Session, error) {
 	return &sppb.Session{Name: req.GetDatabase() + "/sessions/test"}, nil
 }
 
-func (s *queryStatsModeServer) ExecuteStreamingSql(req *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
-	s.mu.Lock()
-	s.receivedModes = append(s.receivedModes, req.GetQueryMode())
-	s.mu.Unlock()
-
+func (s *queryStatsModeServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
 	if err := stream.Send(&sppb.PartialResultSet{
 		Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{{
 			Name: "value",
@@ -146,23 +126,54 @@ func (s *queryStatsModeServer) ExecuteStreamingSql(req *sppb.ExecuteSqlRequest, 
 
 	stats := &sppb.ResultSetStats{
 		QueryStats: &structpb.Struct{Fields: map[string]*structpb.Value{
-			"mode": structpb.NewStringValue(req.GetQueryMode().String()),
+			"summary": structpb.NewStringValue("test stats"),
 		}},
 	}
-	if req.GetQueryMode() == sppb.ExecuteSqlRequest_WITH_PLAN_AND_STATS {
-		stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "Fake Scan"}}}
-	}
+	stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "Fake Scan"}}}
 	return stream.Send(&sppb.PartialResultSet{Stats: stats})
 }
 
-func (s *queryStatsModeServer) resetModes() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.receivedModes = nil
-}
-
-func (s *queryStatsModeServer) modes() []sppb.ExecuteSqlRequest_QueryMode {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]sppb.ExecuteSqlRequest_QueryMode(nil), s.receivedModes...)
+// TestMainSendsAdditionalQueryStatsModes stops at the request boundary because
+// emulator support for these modes is independent of CLI option propagation.
+func TestMainSendsAdditionalQueryStatsModes(t *testing.T) {
+	env, err := spanemuboost.RunEmulatorWithClients(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close() //nolint:errcheck
+	t.Setenv("SPANNER_EMULATOR_HOST", env.Emulator().URI())
+	for _, mode := range []string{"WITH_PLAN_AND_STATS", "WITH_STATS"} {
+		for _, args := range [][]string{
+			{"--format", "json"},
+			{"--format", "yaml", "--jq-input-mode", "lazy"},
+			{"--format", "experimental_csv"},
+		} {
+			t.Run(mode+"/"+strings.Join(args, "_"), func(t *testing.T) {
+				modes := make(chan string, 1)
+				dialOptions := grpctest.Inspect(func(_ string, req any) error {
+					if req, ok := req.(*sppb.ExecuteSqlRequest); ok {
+						select {
+						case modes <- req.GetQueryMode().String():
+						default:
+						}
+						return status.Error(codes.InvalidArgument, "query mode test capture")
+					}
+					return nil
+				})
+				cli := []string{env.DatabaseID, "--project", env.ProjectID, "--instance", env.InstanceID, "--sql", "SELECT 1", "--query-mode", mode, "--timeout", "5s"}
+				err := runMain(t, append(cli, args...), option.WithGRPCDialOption(dialOptions[0]), option.WithGRPCDialOption(dialOptions[1]))
+				if err == nil || !strings.Contains(err.Error(), "query mode test capture") {
+					t.Fatalf("error = %v, want capture error", err)
+				}
+				select {
+				case got := <-modes:
+					if got != mode {
+						t.Fatalf("query mode = %s, want %s", got, mode)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("no ExecuteSql request")
+				}
+			})
+		}
+	}
 }
