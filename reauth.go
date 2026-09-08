@@ -309,6 +309,14 @@ func gcloudADCLoginArgs(getenv func(string) string) []string {
 // runGcloudADCLogin runs `gcloud auth application-default login` with a
 // fixed argument vector. Stdout is attached to stderr so query output is
 // not mixed with gcloud's instructions. Tokens and ADC JSON are not logged.
+//
+// On Windows the SDK installs gcloud as gcloud.cmd. exec.LookPath resolves
+// it through PATHEXT and CreateProcess launches batch files through cmd.exe
+// implicitly, so no explicit interpreter is needed (this is the same
+// mechanism os/exec documents under its cmd.exe quoting caveat). The cmd.exe
+// unquoting differences do not matter here because every argument is a fixed
+// literal without spaces or metacharacters; only the resolved path may
+// contain spaces, and Go quotes argv[0] like any other argument.
 func runGcloudADCLogin(ctx context.Context, getenv func(string) string, lookPath func(string) (string, error)) error {
 	bin, err := lookPath("gcloud")
 	if err != nil {
