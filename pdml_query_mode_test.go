@@ -10,6 +10,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/apstndb/spanemuboost"
+	"google.golang.org/api/option"
 )
 
 const pdmlQueryModeAuditSQL = "UPDATE PdmlQueryModeAudit SET V=99 WHERE TRUE"
@@ -73,12 +74,12 @@ func TestPartitionedDMLQueryMode(t *testing.T) {
 	}
 }
 
-func runMain(t *testing.T, args []string) error {
+func runMain(t *testing.T, args []string, options ...option.ClientOption) error {
 	t.Helper()
 	old := os.Args
 	os.Args = append([]string{"execspansql"}, args...)
 	defer func() { os.Args = old }()
-	return _main()
+	return runCLI(options...)
 }
 
 func readPdmlQueryModeV(t *testing.T, ctx context.Context, client *spanner.Client) int64 {

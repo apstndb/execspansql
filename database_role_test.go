@@ -2,28 +2,16 @@ package main
 
 import (
 	"context"
-	"net"
+
 	"testing"
 	"time"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/alecthomas/kong"
-	"google.golang.org/grpc"
+	"github.com/apstndb/execspansql/internal/grpctest"
+	"github.com/apstndb/spanemuboost"
+	"google.golang.org/api/option"
 )
-
-type databaseRoleSpannerServer struct {
-	sppb.UnimplementedSpannerServer
-	createSession chan *sppb.CreateSessionRequest
-}
-
-func (s *databaseRoleSpannerServer) CreateSession(_ context.Context, req *sppb.CreateSessionRequest) (*sppb.Session, error) {
-	s.createSession <- req
-	return &sppb.Session{
-		Name:        req.Database + "/sessions/test",
-		CreatorRole: req.GetSession().GetCreatorRole(),
-		Multiplexed: true,
-	}, nil
-}
 
 func TestDatabaseRoleFlag(t *testing.T) {
 	t.Parallel()
@@ -46,6 +34,13 @@ func TestDatabaseRoleFlag(t *testing.T) {
 }
 
 func TestNewClientSendsDatabaseRoleWhenCreatingSession(t *testing.T) {
+	env, err := spanemuboost.RunEmulatorWithClients(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.Close() //nolint:errcheck
+	t.Setenv("SPANNER_EMULATOR_HOST", env.Emulator().URI())
+
 	for _, tt := range []struct {
 		name string
 		role string
@@ -54,31 +49,28 @@ func TestNewClientSendsDatabaseRoleWhenCreatingSession(t *testing.T) {
 		{name: "omitted"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			server := &databaseRoleSpannerServer{createSession: make(chan *sppb.CreateSessionRequest, 1)}
-			grpcServer := grpc.NewServer()
-			sppb.RegisterSpannerServer(grpcServer, server)
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				grpcServer.Stop()
-				_ = listener.Close()
+			roles := make(chan string, 1)
+			dialOptions := grpctest.Inspect(func(_ string, req any) error {
+				if req, ok := req.(*sppb.CreateSessionRequest); ok {
+					select {
+					case roles <- req.GetSession().GetCreatorRole():
+					default:
+					}
+				}
+				return nil
 			})
-			go func() { _ = grpcServer.Serve(listener) }()
-			t.Setenv("SPANNER_EMULATOR_HOST", listener.Addr().String())
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			client, err := newClient(ctx, "p", "i", "d", tt.role, logGrpcModeOff, false)
+			client, err := newClient(ctx, env.ProjectID, env.InstanceID, env.DatabaseID, tt.role, logGrpcModeOff, false, option.WithGRPCDialOption(dialOptions[0]), option.WithGRPCDialOption(dialOptions[1]))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer client.Close()
 
 			select {
-			case req := <-server.createSession:
-				if got := req.GetSession().GetCreatorRole(); got != tt.role {
+			case got := <-roles:
+				if got != tt.role {
 					t.Fatalf("session CreatorRole = %q, want %q", got, tt.role)
 				}
 			case <-ctx.Done():
