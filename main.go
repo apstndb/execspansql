@@ -48,11 +48,11 @@ func main() {
 }
 
 type opts struct {
-	Database             string        `arg:"" required:"" help:"ID of the database."`
+	Database             string        `arg:"" required:"" help:"ID or fully qualified resource name of the database."`
 	Sql                  string        `name:"sql" xor:"sql" required:"" help:"SQL query text; exclusive with --sql-file."`
 	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
-	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
-	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
+	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" help:"ID of the project; required for a database ID."`
+	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" help:"ID of the instance; required for a database ID."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
@@ -75,6 +75,37 @@ type opts struct {
 		Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
 		ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
 	} `embed:"" prefix:"" group:"Timestamp Bound"`
+}
+
+func (o opts) Validate() error {
+	_, err := databaseResourceName(o.Project, o.Instance, o.Database)
+	return err
+}
+
+func databaseResourceName(project, instance, database string) (string, error) {
+	if strings.Contains(database, "/") {
+		parts := strings.Split(database, "/")
+		if len(parts) != 6 || parts[0] != "projects" || parts[1] == "" ||
+			parts[2] != "instances" || parts[3] == "" || parts[4] != "databases" || parts[5] == "" {
+			return "", fmt.Errorf("invalid database resource name %q; expected projects/PROJECT/instances/INSTANCE/databases/DATABASE", database)
+		}
+		// Like gcloud resource arguments, an explicit full name takes precedence
+		// over project and instance flags or environment defaults.
+		return database, nil
+	}
+	if database == "" {
+		return "", errors.New("database ID is required")
+	}
+	if project == "" {
+		return "", errors.New("--project is required when database is an ID")
+	}
+	if instance == "" {
+		return "", errors.New("--instance is required when database is an ID")
+	}
+	if strings.ContainsAny(project+instance, "/") {
+		return "", errors.New("--project and --instance must be IDs, not resource names")
+	}
+	return fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database), nil
 }
 
 func (o opts) mergedParams() (map[string]string, error) {
@@ -547,7 +578,10 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 }
 
 func newClient(ctx context.Context, project, instance, database string, logGrpcMode string, doTrace bool) (*spanner.Client, error) {
-	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
+	name, err := databaseResourceName(project, instance, database)
+	if err != nil {
+		return nil, err
+	}
 
 	var copts []option.ClientOption
 	if logGrpcMode != logGrpcModeOff {

@@ -21,21 +21,22 @@ This tool is still pre-release quality and none of guarantees.
 
 You can use [released binaries](https://github.com/apstndb/execspansql/releases).
 ```
-Usage: execspansql --sql=STRING --sql-file=STRING --project=STRING --instance=STRING <database> [flags]
+Usage: execspansql --sql=STRING --sql-file=STRING <database> [flags]
 
 Yet another gcloud spanner databases execute-sql replacement
 
 Arguments:
-  <database>    ID of the database.
+  <database>    ID or fully qualified resource name of the database.
 
 Flags:
   -h, --help                       Show context-sensitive help.
       --sql=STRING                 SQL query text; exclusive with --sql-file.
       --sql-file=STRING            File name contains SQL query; exclusive with
                                    --sql
-  -p, --project=STRING             ID of the project ($CLOUDSDK_CORE_PROJECT).
-  -i, --instance=STRING            ID of the instance
-                                   ($CLOUDSDK_SPANNER_INSTANCE).
+  -p, --project=STRING             ID of the project; required for a database ID
+                                   ($CLOUDSDK_CORE_PROJECT).
+  -i, --instance=STRING            ID of the instance; required for a database
+                                   ID ($CLOUDSDK_SPANNER_INSTANCE).
       --query-mode="NORMAL"        Query mode.
       --format="json"              Output format.
       --redact-rows                Redact result rows from output
@@ -90,6 +91,16 @@ $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.
 $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.json:/home/nonroot/.config/gcloud/application_default_credentials.json:ro" \
     ghcr.io/apstndb/execspansql/execspansql:vX.Y.Z -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 ```
+
+## Database resource names
+
+Pass either a database ID with `--project` and `--instance`, or a fully qualified resource name:
+
+```sh
+execspansql projects/my-project/instances/my-instance/databases/my-database --sql='SELECT 1'
+```
+
+A fully qualified name supplies all three IDs and takes precedence over `--project`, `--instance`, and their `CLOUDSDK_CORE_PROJECT` / `CLOUDSDK_SPANNER_INSTANCE` environment defaults. A short database ID still requires project and instance flags or environment values. As before, gcloud configuration files are not read.
 
 ## Notable features
 
