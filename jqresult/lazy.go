@@ -27,11 +27,29 @@ type Lazy struct {
 
 	drained  bool
 	drainErr error
+
+	omitQueryPlan bool
+}
+
+// LazyOption configures NewLazy.
+type LazyOption func(*Lazy)
+
+// WithOmitQueryPlan omits queryPlan from the .stats object presented to jq.
+// The underlying iterator stats still include the plan for Drain/Result.
+func WithOmitQueryPlan() LazyOption {
+	return func(l *Lazy) {
+		l.omitQueryPlan = true
+	}
 }
 
 // NewLazy builds a lazy jq input. rowIter must not have been read yet; Lazy takes ownership and Stop()s it.
-func NewLazy(rowIter *spanner.RowIterator, redact bool) *Lazy {
+func NewLazy(rowIter *spanner.RowIterator, redact bool, opts ...LazyOption) *Lazy {
 	l := &Lazy{redact: redact}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(l)
+		}
+	}
 	l.rows = NewRowIter(rowIter, redact, RowToJSON)
 	l.rows.ioMu = &l.ioMu
 	return l
@@ -89,10 +107,79 @@ func (l *Lazy) drain() error {
 }
 
 func (l *Lazy) statsMapFromResult(result spaniter.RowIteratorResult) (map[string]any, error) {
+	var (
+		stats map[string]any
+		err   error
+	)
 	if l.encodeStats != nil {
-		return l.encodeStats(result.Stats)
+		stats, err = l.encodeStats(result.Stats)
+	} else {
+		stats, err = StatsMapFromResult(result)
 	}
-	return StatsMapFromResult(result)
+	if err != nil || stats == nil || !l.omitQueryPlan {
+		return stats, err
+	}
+	out := make(map[string]any, len(stats))
+	for k, v := range stats {
+		if k == "queryPlan" {
+			continue
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// Drain consumes any remaining rows so final stats are available.
+// If .stats was already read, this is a no-op.
+// Newly consumed rows are discarded and not retained on Lazy.
+func (l *Lazy) Drain() error {
+	l.mu.Lock()
+	if l.drained {
+		err := l.drainErr
+		l.mu.Unlock()
+		return err
+	}
+	alreadyStreamed := l.rowsStreamDone
+	l.mu.Unlock()
+
+	l.ioMu.Lock()
+	l.mu.Lock()
+	if l.drained {
+		err := l.drainErr
+		l.mu.Unlock()
+		l.ioMu.Unlock()
+		return err
+	}
+	l.mu.Unlock()
+
+	var drainErr error
+	if !alreadyStreamed {
+		drainErr = l.rows.discardRemainingUnlocked()
+	}
+	var stats map[string]any
+	if drainErr == nil {
+		stats, drainErr = l.statsMapFromResult(l.rows.Result())
+	}
+	l.ioMu.Unlock()
+
+	l.mu.Lock()
+	l.stats = stats
+	l.drainErr = drainErr
+	l.drained = true
+	l.rowsStreamDone = true
+	l.mu.Unlock()
+
+	l.rows.Stop()
+	return drainErr
+}
+
+// Result returns iterator metadata and stats captured while rows were consumed.
+// Call Drain first when jq may have stopped before the last PartialResultSet.
+func (l *Lazy) Result() spaniter.RowIteratorResult {
+	if l.rows == nil {
+		return spaniter.RowIteratorResult{}
+	}
+	return l.rows.Result()
 }
 
 func (l *Lazy) ensureMetadata() error {

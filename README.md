@@ -13,6 +13,7 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
 * Embedded jq
 * Configurable gRPC logging (`off`, `metadata`, `payload` with payload caveat)
 * (Experimental) CSV output
+* Split query-plan and row output (`--plan-output`)
 * (Experimental) Check whether the query can be executed as a partition query or not.
 
 This tool is still pre-release quality and none of guarantees.
@@ -41,7 +42,18 @@ Flags:
       --query-mode="NORMAL"        Query mode: NORMAL, PLAN, PROFILE,
                                    WITH_PLAN_AND_STATS, or WITH_STATS.
       --priority="unspecified"     Priority for the execute SQL request.
-      --format="json"              Output format.
+      --format="json"              Output format of the primary document.
+  -o, --output="-"                 Destination of the primary document. Use -
+                                   for stdout; /dev/stdout and /dev/stderr are
+                                   mapped in-process.
+      --plan-output=STRING         Write the query-plan artifact here and strip
+                                   stats.queryPlan from the primary document.
+                                   Enables split mode.
+      --plan-format=STRING         Format of the plan artifact: json or yaml.
+                                   Defaults to --format when that is json or
+                                   yaml, otherwise json. Requires --plan-output.
+      --discard-results            Do not write the primary document
+                                   (plan-only). Requires --plan-output.
       --redact-rows                Redact result rows from output
   -c, --compact-output             Compact JSON output (--compact-output of jq)
       --filter=STRING              jq filter
@@ -125,6 +137,53 @@ $ execspansql ${DATABASE_ID} --project=${SPANNER_PROJECT} --instance=${SPANNER_I
 
 Only `PLAN` accepts bare parameter type expressions such as `ARRAY<STRING>`; the other modes execute the query and require parameter values.
 
+### Split plan and row output
+
+Setting `--plan-output` switches from the default combined document to split mode. The default (no `--plan-output`) stays a single combined `ResultSet` (or CSV of rows) on stdout, byte-for-byte identical to previous versions.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--output PATH` (`-o`) | `-` | Destination of the primary document (metadata, rows, `stats` without `queryPlan`). |
+| `--plan-output PATH` | unset | Enables split mode: write the plan artifact here and remove `stats.queryPlan` from the primary document. |
+| `--plan-format json\|yaml` | follows `--format` when that is `json` or `yaml`, otherwise `json` | Format of the plan artifact. |
+| `--discard-results` | off | Do not write the primary document (plan-only). Requires `--plan-output`. |
+
+`--redact-rows` is independent of `--discard-results`: redact still emits metadata and a CSV header; discard writes no primary bytes at all.
+
+Path conventions for both `--output` and `--plan-output`:
+
+- `-` means stdout.
+- `/dev/stdout` and `/dev/stderr` are recognized literally and mapped to stdout/stderr in-process (so they work on Windows and take part in collision checks). `--plan-output=/dev/stderr` is the supported spelling for "plan on the terminal while rows go down the pipe".
+- Any other value is a regular file. Files are written to a sibling temp file (mode `0600`) and renamed into place after the query (and transaction) succeeds, so a failing query leaves an existing target intact. Overwriting an existing target is allowed. Two files plus stdout are not a transaction: if publishing the second file fails, the command reports which outputs completed and exits non-zero. SQL is never replayed because an output failed.
+
+In split mode the two destinations must differ. Both on stdout (any spelling) is rejected. `--plan-output` requires `--query-mode=PLAN`, `PROFILE`, or `WITH_PLAN_AND_STATS` (never upgraded from `NORMAL` or `WITH_STATS`). It is incompatible with `--try-partition-query` and `--enable-partitioned-dml`.
+
+Document contents:
+
+- Primary document: the current `ResultSet` with `stats.queryPlan` removed. `stats.queryStats` and `stats.rowCount*` stay. CSV primary output is unchanged (rows only).
+- Plan artifact: a `ResultSet` envelope without `rows` — `metadata` (for `rowType`) plus the full `stats` (`queryPlan`, `queryStats`, `rowCount*`). jq flags apply only to the primary document; the plan is never filtered.
+
+Split mode disables jq early stop: remaining rows are drained so the final plan/stats can be captured, at the same server cost as reading everything. Rows drained only for the plan are not retained. `--jq-input-mode=lazy` still caches rows that jq actually consumed.
+
+If output or rendering fails after a committed DML statement, the process exits non-zero and says so. That failure is not a rollback and the SQL is not replayed.
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=experimental_csv \
+    --output=- --plan-output=/dev/stderr \
+    --sql='SELECT * FROM Singers'
+```
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE \
+    --output=rows.yaml --format=yaml --plan-output=plan.json --plan-format=json \
+    --sql='SELECT * FROM Singers'
+```
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --discard-results \
+    --plan-output=plan.json --sql='SELECT * FROM Singers'
+```
+
 ### Parameter support
 
 Many Cloud Spanner clients don't support parameter.
@@ -192,7 +251,7 @@ execspansql can process output using embedded [wader/gojq](https://github.com/wa
 
 In `lazy` mode, `metadata` is populated after the first row is read from Spanner (or after a zero-row result). Prefer `.rows[]` to stream rows. Bare `.rows` is a lazy iterator: reuse it in one object literal (for example `{a: .rows, b: .rows}`) may not duplicate rows because jq can evaluate the subexpression once; use `{a: [.rows[]], b: [.rows[]]}` when you need two row arrays. After `.stats` drains the iterator, captured `.rows` values replay from materialized rows.
 
-`--jq-input-mode=lazy` emits rows incrementally, but rows are cached internally after first materialization and reused, so it is not a strict constant-memory mode for large result sets.
+`--jq-input-mode=lazy` emits rows incrementally, but rows are cached internally after first materialization and reused, so it is not a strict constant-memory mode for large result sets. Split mode (`--plan-output`) disables jq early stop: remaining rows are still drained so the plan artifact can be written.
 
 Output expands top-level `gojq.Iter` to one JSON/YAML document per row (JSONL-style). Nested `Iter` values inside objects are expanded to arrays on encode.
 
@@ -362,3 +421,5 @@ exit status 1
 * `--format=experimental_csv` does not run the jq pipeline; `--filter`, `--filter-file`, `--raw-output`, `--compact-output`, and `--jq-input-mode=lazy` are rejected.
 * `--raw-output` and `--compact-output` are supported only when `--format=json`.
 * Non-`NORMAL` query modes (`PLAN`, `PROFILE`, `WITH_PLAN_AND_STATS`, and `WITH_STATS`) cannot be combined with `--enable-partitioned-dml`. The Partitioned DML client path ignores query mode and would execute writes.
+* `--plan-output` requires a plan-producing query mode and cannot be combined with `--try-partition-query` or `--enable-partitioned-dml`.
+* Split mode disables jq early stop so the plan artifact can be captured after the last `PartialResultSet`.

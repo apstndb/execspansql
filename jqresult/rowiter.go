@@ -149,6 +149,22 @@ func (r *RowIter) drainUnlocked() ([]any, error) {
 	}
 }
 
+// discardRemainingUnlocked consumes remaining iterator rows without retaining them.
+func (r *RowIter) discardRemainingUnlocked() error {
+	if r.stopped {
+		return nil
+	}
+	for {
+		row, err := r.nextRow()
+		if row == nil && err == nil {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (r *RowIter) Stop() {
 	unlock := r.lockIO()
 	defer unlock()
