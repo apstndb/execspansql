@@ -474,6 +474,18 @@ func runCLI(clientOptions ...option.ClientOption) (err error) {
 		return err
 	}
 
+	// Freeze the statement (SQL and parameters) before any interactive step so
+	// a parameter file edited during a browser login cannot change what runs.
+	paramStrMap, err := o.mergedParams()
+	if err != nil {
+		return err
+	}
+	paramMap, err := params.GenerateParams(paramStrMap, mode == sppb.ExecuteSqlRequest_PLAN)
+	if err != nil {
+		return err
+	}
+	stmt := spanner.Statement{SQL: query, Params: paramMap}
+
 	authOpts, err := maybeAuthPreflight(ctx, o, clientOptions, newReauthHooks())
 	if err != nil {
 		return err
@@ -501,17 +513,6 @@ func runCLI(clientOptions ...option.ClientOption) (err error) {
 		return err
 	}
 	defer client.Close()
-
-	paramStrMap, err := o.mergedParams()
-	if err != nil {
-		return err
-	}
-	paramMap, err := params.GenerateParams(paramStrMap, mode == sppb.ExecuteSqlRequest_PLAN)
-	if err != nil {
-		return err
-	}
-
-	stmt := spanner.Statement{SQL: query, Params: paramMap}
 
 	if o.TryPartitionQuery {
 		bt, err := client.BatchReadOnlyTransaction(ctx, tb)
