@@ -7,6 +7,8 @@ import (
 	"encoding/csv"
 	"fmt"
 	"iter"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -606,7 +608,7 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			t.Helper()
 			var buf bytes.Buffer
 			iter := client.Single().Query(ctx, spanner.Statement{SQL: sql})
-			if err := writeCsvFromRowIter(&buf, iter, redact); err != nil {
+			if _, err := writeCsvFromRowIter(&buf, iter, redact); err != nil {
 				t.Fatalf("writeCsvFromRowIter(redact=%v): %v", redact, err)
 			}
 			return readCSV(t, buf.String())
@@ -643,6 +645,83 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 			if got, want := recs[0], []string{"SingerId", "FirstName"}; !cmp.Equal(got, want) {
 				t.Fatalf("header: got %v want %v", got, want)
 			}
+		})
+	})
+
+	t.Run("split plan output", func(t *testing.T) {
+		t.Setenv("SPANNER_EMULATOR_HOST", env.Emulator().URI())
+
+		t.Run("PROFILE csv publishes rows and errors without planNodes", func(t *testing.T) {
+			dir := t.TempDir()
+			rowsPath := filepath.Join(dir, "rows.csv")
+			planPath := filepath.Join(dir, "plan.json")
+			err := runMain(t, []string{
+				env.DatabaseID, "--project", env.ProjectID, "--instance", env.InstanceID,
+				"--sql", "SELECT SingerId, FirstName FROM Singers ORDER BY SingerId LIMIT 2",
+				"--query-mode", "PROFILE",
+				"--format", "experimental_csv",
+				"--output", rowsPath,
+				"--plan-output", planPath,
+			})
+			if err == nil || !strings.Contains(err.Error(), "no query plan") {
+				t.Fatalf("runMain() error = %v, want no query plan", err)
+			}
+			if !strings.Contains(err.Error(), "primary output written") {
+				t.Fatalf("error = %v, want primary published", err)
+			}
+			csvBytes, err := os.ReadFile(rowsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			csvText := string(csvBytes)
+			if strings.Contains(csvText, "queryPlan") {
+				t.Fatalf("CSV contains queryPlan: %s", csvText)
+			}
+			recs, err := csv.NewReader(strings.NewReader(csvText)).ReadAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(recs) != 3 || recs[0][0] != "SingerId" {
+				t.Fatalf("csv records = %#v, want header + 2 rows", recs)
+			}
+			if _, err := os.Stat(planPath); !os.IsNotExist(err) {
+				t.Fatalf("plan file exists after missing-plan error: %v", err)
+			}
+		})
+
+		assertIteratorMetadata := func(t *testing.T, sql string, mode sppb.ExecuteSqlRequest_QueryMode, wantHeader []string, wantRows int) {
+			t.Helper()
+			var buf bytes.Buffer
+			result, err := writeCsvFromRowIter(&buf,
+				client.Single().QueryWithOptions(ctx, spanner.Statement{SQL: sql}, spanner.QueryOptions{Mode: mode.Enum()}),
+				false,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result == nil || result.Metadata == nil || result.Metadata.GetRowType() == nil {
+				t.Fatalf("missing metadata: %#v", result)
+			}
+			recs, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(recs) != 1+wantRows {
+				t.Fatalf("csv records = %#v, want header + %d rows", recs, wantRows)
+			}
+			if !cmp.Equal(recs[0], wantHeader) {
+				t.Fatalf("header = %v, want %v", recs[0], wantHeader)
+			}
+		}
+
+		t.Run("zero_row PROFILE still has metadata", func(t *testing.T) {
+			assertIteratorMetadata(t, "SELECT SingerId FROM Singers WHERE SingerId = -1",
+				sppb.ExecuteSqlRequest_PROFILE, []string{"SingerId"}, 0)
+		})
+
+		t.Run("PLAN still has metadata", func(t *testing.T) {
+			assertIteratorMetadata(t, "SELECT SingerId FROM Singers",
+				sppb.ExecuteSqlRequest_PLAN, []string{"SingerId"}, 0)
 		})
 	})
 }

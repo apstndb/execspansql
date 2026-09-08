@@ -52,6 +52,89 @@ func TestLazyRowsKeepsPositionAfterStatsDrain(t *testing.T) {
 	}
 }
 
+func TestLazyOmitQueryPlanLeavesQueryStats(t *testing.T) {
+	t.Parallel()
+
+	l := newSyntheticLazy(t, 2)
+	l.omitQueryPlan = true
+	l.encodeStats = func(spaniter.Stats) (map[string]any, error) {
+		return map[string]any{
+			"queryPlan":  map[string]any{"planNodes": []any{map[string]any{"displayName": "Scan"}}},
+			"queryStats": map[string]any{"elapsed_time": "1 msecs"},
+		}, nil
+	}
+	defer l.Stop()
+
+	code, err := Compile(".stats", InputLazy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter := code.Run(l)
+	v, ok := iter.Next()
+	if !ok {
+		t.Fatal("no stats")
+	}
+	if err, isErr := v.(error); isErr {
+		t.Fatal(err)
+	}
+	stats, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("stats type %T", v)
+	}
+	if _, ok := stats["queryPlan"]; ok {
+		t.Fatalf("queryPlan present: %#v", stats)
+	}
+	qs, ok := stats["queryStats"].(map[string]any)
+	if !ok || qs["elapsed_time"] != "1 msecs" {
+		t.Fatalf("queryStats = %#v", stats["queryStats"])
+	}
+}
+
+func TestLazyDrainDiscardsRemainingRows(t *testing.T) {
+	t.Parallel()
+
+	l := newSyntheticLazy(t, 5)
+	defer l.Stop()
+	f, ok := l.rowsJQValue().(*lazyRowsField)
+	if !ok {
+		t.Fatal("rows view")
+	}
+	if _, ok := f.Next(); !ok {
+		t.Fatal("expected first row")
+	}
+	if err := l.Drain(); err != nil {
+		t.Fatal(err)
+	}
+	l.mu.Lock()
+	n := len(l.materializedRows)
+	l.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("retained %d rows after Drain, want 1", n)
+	}
+}
+
+func TestLazyDrainIsNoopAfterStats(t *testing.T) {
+	t.Parallel()
+
+	l := newSyntheticLazy(t, 3)
+	defer l.Stop()
+	if _, err := l.statsMap(); err != nil {
+		t.Fatal(err)
+	}
+	l.mu.Lock()
+	before := len(l.materializedRows)
+	l.mu.Unlock()
+	if err := l.Drain(); err != nil {
+		t.Fatal(err)
+	}
+	l.mu.Lock()
+	after := len(l.materializedRows)
+	l.mu.Unlock()
+	if after != before {
+		t.Fatalf("Drain after stats changed retained rows %d -> %d", before, after)
+	}
+}
+
 func TestLazyStatsInterleavedFilterIDs(t *testing.T) {
 	t.Parallel()
 

@@ -373,6 +373,63 @@ func TestValidateExecutionOptions(t *testing.T) {
 			o:    opts{EnablePartitionedDML: true, QueryMode: "NORMAL", Format: "experimental_csv"},
 			mode: partitionedDML{},
 		},
+		{
+			name: "plan_output_allows_profile",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "plan_output_allows_plan_mode",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "PLAN"},
+			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "plan_output_allows_with_plan_and_stats",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "WITH_PLAN_AND_STATS"},
+			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "plan_output_rejects_normal",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "NORMAL"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-output requires --query-mode=PLAN, PROFILE, or WITH_PLAN_AND_STATS",
+		},
+		{
+			name: "plan_output_rejects_with_stats",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "WITH_STATS"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-output requires --query-mode=PLAN, PROFILE, or WITH_PLAN_AND_STATS",
+		},
+		{
+			name: "plan_format_requires_plan_output",
+			o:    opts{PlanFormat: "json", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-format requires --plan-output",
+		},
+		{
+			name: "discard_results_requires_plan_output",
+			o:    opts{DiscardResults: true, QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--discard-results requires --plan-output",
+		},
+		{
+			name: "plan_output_rejects_try_partition_query",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "PROFILE", TryPartitionQuery: true},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-output cannot be combined with --try-partition-query",
+		},
+		{
+			name: "plan_output_rejects_partitioned_dml",
+			o:    opts{PlanOutput: "plan.json", QueryMode: "PROFILE", EnablePartitionedDML: true},
+			mode: partitionedDML{},
+			err:  "--plan-output cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "plan_format_rejects_unknown",
+			o:    opts{PlanOutput: "plan.json", PlanFormat: "text", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-format must be json or yaml",
+		},
 	}
 
 	for _, tt := range tests {
