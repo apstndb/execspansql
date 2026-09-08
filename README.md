@@ -37,6 +37,7 @@ Flags:
                                    ($CLOUDSDK_CORE_PROJECT).
   -i, --instance=STRING            ID of the instance; required for a database
                                    ID ($CLOUDSDK_SPANNER_INSTANCE).
+      --database-role=STRING       Database role to assume for all operations.
       --query-mode="NORMAL"        Query mode.
       --priority="unspecified"     Priority for the execute SQL request.
       --format="json"              Output format.
@@ -106,6 +107,15 @@ A fully qualified name supplies all three IDs and takes precedence over `--proje
 ## Notable features
 
 There are examples omitting some required options.
+
+### Database role
+
+Use `--database-role` to assume a Spanner database role for every operation in the command:
+
+```
+$ execspansql ${DATABASE_ID} --project=${SPANNER_PROJECT} --instance=${SPANNER_INSTANCE} \
+    --database-role=report_reader --sql='SELECT * FROM Singers'
+```
 
 ### Parameter support
 
