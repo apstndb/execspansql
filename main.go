@@ -65,7 +65,7 @@ type opts struct {
 	JqInputMode          string        `name:"jq-input-mode" enum:"eager,lazy" default:"eager" help:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)."`
 	ParamFlags           []string      `name:"param" help:"[name]=[type or literal]; legacy [name]:[...] also accepted"`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
-	LogGrpc              string        `name:"log-grpc" enum:"off,metadata,payload" default:"off" help:"gRPC logging mode: off, metadata, or payload (payload may include request and response payloads in logs)"`
+	LogGrpc              logGrpcFlag   `name:"log-grpc" enum:"off,metadata,payload" default:"off" help:"gRPC logging: --log-grpc means payload; use --log-grpc=off|metadata|payload to select a mode (payload may include request and response payloads)"`
 	TraceProject         string        `name:"experimental-trace-project" xor:"trace" help:"Export traces to Cloud Trace in the given project."`
 	TraceStdout          bool          `name:"experimental-trace-stdout" xor:"trace" help:"Export spans to stderr as pretty JSON (local debugging)."`
 	TraceOTLP            bool          `name:"experimental-trace-otlp" xor:"trace" help:"Export spans via OTLP/gRPC to a local OpenTelemetry collector."`
@@ -474,7 +474,7 @@ func runCLI(clientOptions ...option.ClientOption) error {
 		}()
 	}
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, o.LogGrpc, tracingEnabled(o), clientOptions...)
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, string(o.LogGrpc), tracingEnabled(o), clientOptions...)
 	if err != nil {
 		return err
 	}

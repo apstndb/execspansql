@@ -54,9 +54,10 @@ Flags:
                                    also accepted
       --param-file=STRING          YAML or JSON file of query parameters (name
                                    to type/literal string)
-      --log-grpc="off"             gRPC logging mode: off, metadata, or payload
-                                   (payload may include request and response
-                                   payloads in logs)
+      --log-grpc                   gRPC logging: --log-grpc means payload;
+                                   use --log-grpc=off|metadata|payload to select
+                                   a mode (payload may include request and
+                                   response payloads)
       --experimental-trace-project=STRING
                                    Export traces to Cloud Trace in the given
                                    project.
@@ -327,6 +328,9 @@ $ execspansql $DATABASE_ID --query-mode=PROFILE --sql 'SELECT 1' --experimental-
 ```
 
 Note: `--experimental-trace-stdout` writes to **stderr**, not stdout.
+
+A bare `--log-grpc` retains its previous meaning: payload logging. Logging is off when the flag is omitted. Use `--log-grpc=off`, `--log-grpc=metadata`, or `--log-grpc=payload` to select a mode; an explicit value must use `=` so the next database argument is not consumed. Legacy boolean values such as `--log-grpc=true` and `--log-grpc=false` remain accepted.
+
 Note: `--log-grpc=payload` can log request and response payloads (including bound parameters and row values) and should only be used in trusted environments.
 
 ![trace.png](docs/trace.png)
