@@ -53,7 +53,7 @@ type opts struct {
 	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
 	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
 	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
-	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
+	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE,WITH_PLAN_AND_STATS,WITH_STATS" default:"NORMAL" help:"Query mode: NORMAL, PLAN, PROFILE, WITH_PLAN_AND_STATS, or WITH_STATS."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
 	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
@@ -219,10 +219,11 @@ func validateExecutionOptions(o opts, mode queryMode) error {
 		if _, ok := mode.(partitionedDML); !ok {
 			return fmt.Errorf("--enable-partitioned-dml can only be used with DML statements")
 		}
-		// PartitionedUpdateWithOptions does not copy QueryOptions.Mode, so PLAN
-		// and PROFILE would execute writes instead of returning a plan or profile.
+		// PartitionedUpdateWithOptions does not copy QueryOptions.Mode. Every
+		// non-NORMAL query mode would therefore execute writes instead of
+		// returning its requested plan and/or statistics.
 		switch o.QueryMode {
-		case "PLAN", "PROFILE":
+		case "PLAN", "PROFILE", "WITH_PLAN_AND_STATS", "WITH_STATS":
 			return fmt.Errorf("--query-mode=%s cannot be combined with --enable-partitioned-dml", o.QueryMode)
 		}
 	}

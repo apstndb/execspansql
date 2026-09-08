@@ -299,6 +299,16 @@ func TestValidateExecutionOptions(t *testing.T) {
 			mode: readWrite{},
 		},
 		{
+			name: "with_plan_and_stats_allows_read_write_dml",
+			o:    opts{QueryMode: "WITH_PLAN_AND_STATS"},
+			mode: readWrite{},
+		},
+		{
+			name: "with_stats_allows_read_write_dml",
+			o:    opts{QueryMode: "WITH_STATS"},
+			mode: readWrite{},
+		},
+		{
 			name: "plan_rejects_partitioned_dml",
 			o:    opts{EnablePartitionedDML: true, QueryMode: "PLAN"},
 			mode: partitionedDML{},
@@ -309,6 +319,18 @@ func TestValidateExecutionOptions(t *testing.T) {
 			o:    opts{EnablePartitionedDML: true, QueryMode: "PROFILE"},
 			mode: partitionedDML{},
 			err:  "--query-mode=PROFILE cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "with_plan_and_stats_rejects_partitioned_dml",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "WITH_PLAN_AND_STATS"},
+			mode: partitionedDML{},
+			err:  "--query-mode=WITH_PLAN_AND_STATS cannot be combined with --enable-partitioned-dml",
+		},
+		{
+			name: "with_stats_rejects_partitioned_dml",
+			o:    opts{EnablePartitionedDML: true, QueryMode: "WITH_STATS"},
+			mode: partitionedDML{},
+			err:  "--query-mode=WITH_STATS cannot be combined with --enable-partitioned-dml",
 		},
 		{
 			name: "plan_rejects_partitioned_dml_json",

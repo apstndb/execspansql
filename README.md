@@ -36,7 +36,8 @@ Flags:
   -p, --project=STRING             ID of the project ($CLOUDSDK_CORE_PROJECT).
   -i, --instance=STRING            ID of the instance
                                    ($CLOUDSDK_SPANNER_INSTANCE).
-      --query-mode="NORMAL"        Query mode.
+      --query-mode="NORMAL"        Query mode: NORMAL, PLAN, PROFILE,
+                                   WITH_PLAN_AND_STATS, or WITH_STATS.
       --format="json"              Output format.
       --redact-rows                Redact result rows from output
   -c, --compact-output             Compact JSON output (--compact-output of jq)
@@ -94,6 +95,12 @@ $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.
 ## Notable features
 
 There are examples omitting some required options.
+
+### Query modes
+
+`--query-mode` matches gcloud's query-stat modes. `NORMAL` returns result rows only; `PLAN` returns the plan without rows or execution statistics; `PROFILE` returns rows, a plan, overall statistics, and operator-level statistics. `WITH_PLAN_AND_STATS` returns rows, a plan, and overall statistics without operator-level statistics. `WITH_STATS` returns rows and overall statistics without a plan or operator-level statistics.
+
+Only `PLAN` accepts bare parameter type expressions such as `ARRAY<STRING>`; the other modes execute the query and require parameter values.
 
 ### Parameter support
 
@@ -324,4 +331,4 @@ exit status 1
 
 * `--format=experimental_csv` does not run the jq pipeline; `--filter`, `--filter-file`, `--raw-output`, `--compact-output`, and `--jq-input-mode=lazy` are rejected.
 * `--raw-output` and `--compact-output` are supported only when `--format=json`.
-* `--query-mode=PLAN` and `--query-mode=PROFILE` cannot be combined with `--enable-partitioned-dml`. The Partitioned DML client path ignores query mode and would execute writes.
+* Non-`NORMAL` query modes (`PLAN`, `PROFILE`, `WITH_PLAN_AND_STATS`, and `WITH_STATS`) cannot be combined with `--enable-partitioned-dml`. The Partitioned DML client path ignores query mode and would execute writes.
