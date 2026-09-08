@@ -1,0 +1,10 @@
++----+--------------------------------------------------------------------------+
+| ID | Operator                                                                 |
++----+--------------------------------------------------------------------------+
+|  0 | Global Limit <Row>                                                       |
+|  1 | +- Distributed Union on Singers <Row>                                    |
+|  2 |    +- Serialize Result <Row>                                             |
+|  3 |       +- Local Limit <Row>                                               |
+|  4 |          +- Local Distributed Union <Row>                                |
+|  5 |             +- Table Scan on Singers <Row> (Full scan, scan_method: Row) |
++----+--------------------------------------------------------------------------+
