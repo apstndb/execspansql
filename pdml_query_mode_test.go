@@ -39,7 +39,7 @@ func TestPartitionedDMLQueryMode(t *testing.T) {
 		"--enable-partitioned-dml",
 	}
 
-	for _, queryMode := range []string{"PLAN", "PROFILE"} {
+	for _, queryMode := range []string{"PLAN", "PROFILE", "WITH_PLAN_AND_STATS", "WITH_STATS"} {
 		for _, format := range []string{"json", "yaml", "experimental_csv"} {
 			queryMode := queryMode
 			format := format
