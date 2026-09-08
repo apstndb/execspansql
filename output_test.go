@@ -437,6 +437,73 @@ func TestDiscardResultsProducesNoPrimaryBytes(t *testing.T) {
 	}
 }
 
+func TestIsCommittedMode(t *testing.T) {
+	t.Parallel()
+
+	if isCommittedMode(single{}) {
+		t.Fatal("single-use read must not count as committed")
+	}
+	if !isCommittedMode(readWrite{}) {
+		t.Fatal("read-write DML must count as committed")
+	}
+	if !isCommittedMode(partitionedDML{}) {
+		t.Fatal("partitioned DML must count as committed")
+	}
+}
+
+func TestMaterializeWithoutRows(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		o    opts
+		want bool
+	}{
+		{"default keeps rows", opts{}, false},
+		{"redact drops rows", opts{RedactRows: true}, true},
+		{"discard drops rows", opts{DiscardResults: true}, true},
+		{"both drop rows", opts{RedactRows: true, DiscardResults: true}, true},
+	}
+	for _, tc := range cases {
+		if got := materializeWithoutRows(tc.o); got != tc.want {
+			t.Errorf("%s: materializeWithoutRows = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestFinishPublishFailureAfterCommitIsWrapped(t *testing.T) {
+	t.Parallel()
+
+	// Make the plan rename fail by turning the target path into a directory
+	// after the sinks opened their temp files.
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "plan.json")
+	s, err := newOutputSinks(opts{
+		Output:     "-",
+		PlanOutput: plan,
+		QueryMode:  "PROFILE",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(plan, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.MarkPrimaryComplete()
+	finishErr := s.Finish(nil)
+	if finishErr == nil {
+		t.Fatal("expected publish failure")
+	}
+	// runCLI wraps this for committed modes; the wrapper must carry the
+	// no-rollback wording so a caller does not replay the DML.
+	got := wrapCommittedOutputError(finishErr).Error()
+	for _, want := range []string{"not a rollback", "not replayed", "plan output"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("wrapped error %q lacks %q", got, want)
+		}
+	}
+}
+
 func TestProcessFlagsOutputDefaults(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })

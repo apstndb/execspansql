@@ -532,7 +532,32 @@ func runCLI(clientOptions ...option.ClientOption) error {
 	} else {
 		workErr = runJqOutput(ctx, client, stmt, queryOpts, m, o, jqMode, jqCode, sinks)
 	}
-	return sinks.Finish(workErr)
+	finishErr := sinks.Finish(workErr)
+	if finishErr != nil && workErr == nil && isCommittedMode(m) {
+		// The statement completed (a read-write transaction committed or a
+		// partitioned DML finished) and only file publication failed.
+		// Say so explicitly so nobody replays the DML to repair an output file.
+		return wrapCommittedOutputError(finishErr)
+	}
+	return finishErr
+}
+
+// isCommittedMode reports whether a successful run of mode leaves a committed
+// write behind, which changes how later output failures must be described.
+func isCommittedMode(mode queryMode) bool {
+	switch mode.(type) {
+	case readWrite, partitionedDML:
+		return true
+	default:
+		return false
+	}
+}
+
+// materializeWithoutRows reports whether the eager path may drop row values
+// while materializing: both --redact-rows and --discard-results never emit
+// rows, so reading them into memory would only cost time and memory.
+func materializeWithoutRows(o opts) bool {
+	return o.RedactRows || o.DiscardResults
 }
 
 func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, o opts, sinks *outputSinks) error {
@@ -754,10 +779,7 @@ func runJqOutput(
 	jqCode *gojq.Code,
 	sinks *outputSinks,
 ) error {
-	_, committed := mode.(readWrite)
-	if _, ok := mode.(partitionedDML); ok {
-		committed = true
-	}
+	committed := isCommittedMode(mode)
 	wrap := func(err error) error {
 		if err != nil && committed {
 			return wrapCommittedOutputError(err)
@@ -771,7 +793,7 @@ func runJqOutput(
 	}
 	planFmt := effectivePlanFormat(o)
 	if useEager {
-		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, o.RedactRows)
+		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, materializeWithoutRows(o))
 		if err != nil {
 			return err
 		}
