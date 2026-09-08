@@ -19,6 +19,13 @@ builds:
       - linux
       - windows
       - darwin
+    # 64-bit only. GoReleaser's default arch list also includes 386, but no
+    # 32-bit release asset has had a non-trivial download, and upcoming
+    # dependencies (embedded Graphviz via wazero) only have an optimizing
+    # compiler on amd64/arm64.
+    goarch:
+      - amd64
+      - arm64
 
 archives:
   - formats:
@@ -27,9 +34,7 @@ archives:
       {{ .ProjectName }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
         formats:
