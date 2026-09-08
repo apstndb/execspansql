@@ -56,7 +56,11 @@ type opts struct {
 	DatabaseRole         string        `name:"database-role" help:"Database role to assume for all operations."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE,WITH_PLAN_AND_STATS,WITH_STATS" default:"NORMAL" help:"Query mode: NORMAL, PLAN, PROFILE, WITH_PLAN_AND_STATS, or WITH_STATS."`
 	Priority             string        `name:"priority" enum:"high,low,medium,unspecified" default:"unspecified" help:"Priority for the execute SQL request."`
-	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
+	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format of the primary document."`
+	Output               string        `name:"output" short:"o" default:"-" help:"Destination of the primary document. Use - for stdout; /dev/stdout and /dev/stderr are mapped in-process."`
+	PlanOutput           string        `name:"plan-output" help:"Write the query-plan artifact here and strip stats.queryPlan from the primary document. Enables split mode."`
+	PlanFormat           string        `name:"plan-format" help:"Format of the plan artifact: json or yaml. Defaults to --format when that is json or yaml, otherwise json. Requires --plan-output."`
+	DiscardResults       bool          `name:"discard-results" help:"Do not write the primary document (plan-only). Requires --plan-output."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
 	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
 	JqFilter             string        `name:"filter" xor:"filter" help:"jq filter"`
@@ -228,6 +232,9 @@ func queryModeForQuery(query string, enablePartitionedDML bool, tb spanner.Times
 }
 
 func validateExecutionOptions(o opts, mode queryMode) error {
+	if err := validatePlanOutputOptions(o); err != nil {
+		return err
+	}
 	if o.TryPartitionQuery {
 		if _, ok := mode.(single); !ok {
 			if o.EnablePartitionedDML {
@@ -462,6 +469,12 @@ func runCLI(clientOptions ...option.ClientOption) error {
 		return err
 	}
 
+	sinks, err := newOutputSinks(o)
+	if err != nil {
+		return err
+	}
+	defer sinks.Abort()
+
 	ctx, tp, err := enableTracing(ctx, o)
 	if err != nil {
 		return err
@@ -504,47 +517,155 @@ func runCLI(clientOptions ...option.ClientOption) error {
 			return err
 		}
 
-		fmt.Println("success")
-		return nil
+		if sinks.primary != nil {
+			if _, err := fmt.Fprintln(sinks.primary, "success"); err != nil {
+				return err
+			}
+		}
+		sinks.MarkPrimaryComplete()
+		return sinks.Finish(nil)
 	}
 
+	var workErr error
 	if o.Format == "experimental_csv" {
-		return runAndWriteCsv(ctx, client, stmt, queryOpts, m, o.RedactRows)
+		workErr = runAndWriteCsv(ctx, client, stmt, queryOpts, m, o, sinks)
+	} else {
+		workErr = runJqOutput(ctx, client, stmt, queryOpts, m, o, jqMode, jqCode, sinks)
 	}
-
-	return runJqOutput(ctx, client, stmt, queryOpts, m, o, jqMode, jqCode)
+	finishErr := sinks.Finish(workErr)
+	if finishErr != nil && workErr == nil && isCommittedMode(m) {
+		// The statement completed (a read-write transaction committed or a
+		// partitioned DML finished) and only file publication failed.
+		// Say so explicitly so nobody replays the DML to repair an output file.
+		return wrapCommittedOutputError(finishErr)
+	}
+	return finishErr
 }
 
-func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {
+// isCommittedMode reports whether a successful run of mode leaves a committed
+// write behind, which changes how later output failures must be described.
+func isCommittedMode(mode queryMode) bool {
+	switch mode.(type) {
+	case readWrite, partitionedDML:
+		return true
+	default:
+		return false
+	}
+}
+
+// materializeWithoutRows reports whether the eager path may drop row values
+// while materializing: both --redact-rows and --discard-results never emit
+// rows, so reading them into memory would only cost time and memory.
+func materializeWithoutRows(o opts) bool {
+	return o.RedactRows || o.DiscardResults
+}
+
+func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, o opts, sinks *outputSinks) error {
+	encodeRowCount := dmlRowCountForMode(mode, opts)
+	statOpts := spaniterStatsOpts(mode, opts)
+	planFmt := effectivePlanFormat(o)
+	writePlanFromCSV := func(result *svwriter.RowIteratorResult) error {
+		if sinks.plan == nil {
+			return nil
+		}
+		stats, err := statsFromWriterResult(result, encodeRowCount)
+		if err != nil {
+			return err
+		}
+		var md *sppb.ResultSetMetadata
+		if result != nil {
+			md = result.Metadata
+		}
+		return writePlan(sinks.plan, planFmt, md, stats)
+	}
+	writePlanFromDrain := func(result *spaniter.RowIteratorResult) error {
+		if sinks.plan == nil {
+			return nil
+		}
+		if result == nil {
+			return errNoQueryPlan
+		}
+		stats, err := result.StatsProto()
+		if err != nil {
+			return err
+		}
+		return writePlan(sinks.plan, planFmt, result.Metadata, stats)
+	}
+
 	switch mode := mode.(type) {
 	case readWrite:
 		var buf bytes.Buffer
+		var csvResult *svwriter.RowIteratorResult
+		var drainResult *spaniter.RowIteratorResult
 		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 			buf.Reset()
-			return writeCsvFromRowIter(&buf, tx.QueryWithOptions(ctx, stmt, opts), redactRows)
+			rowIter := tx.QueryWithOptions(ctx, stmt, opts)
+			if o.DiscardResults {
+				var err error
+				drainResult, err = spaniter.DrainRowIterator(rowIter, statOpts...)
+				return err
+			}
+			var err error
+			csvResult, err = writeCsvFromRowIter(&buf, rowIter, o.RedactRows)
+			return err
 		})
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(os.Stdout, &buf)
-		return err
+		if sinks.primary != nil {
+			if _, err := io.Copy(sinks.primary, &buf); err != nil {
+				return wrapCommittedOutputError(err)
+			}
+		}
+		sinks.MarkPrimaryComplete()
+		var planErr error
+		if o.DiscardResults {
+			planErr = writePlanFromDrain(drainResult)
+		} else {
+			planErr = writePlanFromCSV(csvResult)
+		}
+		if planErr != nil {
+			return wrapCommittedOutputError(planErr)
+		}
+		return nil
 	case single:
-		return writeCsvFromRowIter(
-			os.Stdout,
-			client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts),
-			redactRows,
-		)
+		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
+		if o.DiscardResults {
+			result, err := spaniter.DrainRowIterator(rowIter, statOpts...)
+			if err != nil {
+				return err
+			}
+			sinks.MarkPrimaryComplete()
+			return writePlanFromDrain(result)
+		}
+		writer := sinks.primary
+		if writer == nil {
+			writer = io.Discard
+		}
+		result, err := writeCsvFromRowIter(writer, rowIter, o.RedactRows)
+		if err != nil {
+			return err
+		}
+		sinks.MarkPrimaryComplete()
+		return writePlanFromCSV(result)
 	case partitionedDML:
 		count, err := client.PartitionedUpdateWithOptions(ctx, stmt, opts)
 		if err != nil {
 			return err
 		}
-		return writeCsvFromResultSet(os.Stdout, &sppb.ResultSet{
+		rs := &sppb.ResultSet{
 			Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{}},
 			Stats: &sppb.ResultSetStats{
 				RowCount: &sppb.ResultSetStats_RowCountLowerBound{RowCountLowerBound: count},
 			},
-		})
+		}
+		if sinks.primary != nil {
+			if err := writeCsvFromResultSet(sinks.primary, rs); err != nil {
+				return wrapCommittedOutputError(err)
+			}
+		}
+		sinks.MarkPrimaryComplete()
+		return nil
 	default:
 		panic(fmt.Sprintf("unknown mode: %T", mode))
 	}
@@ -561,17 +682,16 @@ func (csvRedactRowIteratorWriter) WriteRow(*spanner.Row) error { return nil }
 
 // writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
 // Pass the query iterator directly to WriteRowIterator (it owns Stop); do not defer Stop at the call site.
-func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) error {
+func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) (*svwriter.RowIteratorResult, error) {
 	csvWriter, err := svwriter.NewCSVWriter(writer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	iterWriter := svwriter.RowIteratorWriter(csvWriter)
 	if redactRows {
 		iterWriter = csvRedactRowIteratorWriter{csvWriter}
 	}
-	_, err = svwriter.WriteRowIterator(rowIter, iterWriter)
-	return err
+	return svwriter.WriteRowIterator(rowIter, iterWriter)
 }
 
 func prepareCsvRowType(csvWriter *svwriter.DelimitedWriter, metadata *sppb.ResultSetMetadata) error {
@@ -657,38 +777,88 @@ func runJqOutput(
 	o opts,
 	jqMode jqresult.InputMode,
 	jqCode *gojq.Code,
+	sinks *outputSinks,
 ) error {
+	committed := isCommittedMode(mode)
+	wrap := func(err error) error {
+		if err != nil && committed {
+			return wrapCommittedOutputError(err)
+		}
+		return err
+	}
 	useEager := jqMode == jqresult.InputEager
 	// Read-write DML always materializes the full result set before jq runs.
 	if _, ok := mode.(readWrite); ok {
 		useEager = true
 	}
+	planFmt := effectivePlanFormat(o)
 	if useEager {
-		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, o.RedactRows)
+		rs, err := runInNewTransaction(ctx, client, stmt, opts, mode, materializeWithoutRows(o))
 		if err != nil {
 			return err
 		}
-		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
-		if err != nil {
-			return err
+		var planStats *sppb.ResultSetStats
+		var metadata *sppb.ResultSetMetadata
+		if sinks.hasPlan {
+			planStats, metadata = stripQueryPlanForPrimary(rs)
+		} else if rs != nil {
+			metadata = rs.Metadata
+			planStats = rs.Stats
 		}
-		defer func() { _ = closeEncoder(enc) }()
-		iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, o.RedactRows)
-		if err != nil {
-			return err
+		if sinks.primary != nil {
+			enc, err := newEncoder(sinks.primary, o.Format, o.CompactOutput, o.JqRawOutput)
+			if err != nil {
+				return wrap(err)
+			}
+			iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputEager, nil, rs, o.RedactRows)
+			if err != nil {
+				_ = closeEncoder(enc)
+				return wrap(err)
+			}
+			printErr := jqresult.Print(enc, iter)
+			cleanup()
+			closeErr := closeEncoder(enc)
+			if printErr != nil {
+				return wrap(printErr)
+			}
+			if closeErr != nil {
+				return wrap(closeErr)
+			}
 		}
-		defer cleanup()
-		return jqresult.Print(enc, iter)
+		sinks.MarkPrimaryComplete()
+		if sinks.plan != nil {
+			return wrap(writePlan(sinks.plan, planFmt, metadata, planStats))
+		}
+		return nil
 	}
 
 	switch mode := mode.(type) {
 	case single:
-		enc, err := newEncoder(os.Stdout, o.Format, o.CompactOutput, o.JqRawOutput)
+		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
+		if o.DiscardResults {
+			result, err := spaniter.DrainRowIterator(rowIter, spaniterStatsOpts(mode, opts)...)
+			if err != nil {
+				return err
+			}
+			sinks.MarkPrimaryComplete()
+			if sinks.plan == nil {
+				return nil
+			}
+			stats, err := result.StatsProto()
+			if err != nil {
+				return err
+			}
+			return writePlan(sinks.plan, planFmt, result.Metadata, stats)
+		}
+		writer := sinks.primary
+		if writer == nil {
+			writer = io.Discard
+		}
+		enc, err := newEncoder(writer, o.Format, o.CompactOutput, o.JqRawOutput)
 		if err != nil {
 			return err
 		}
-		rowIter := client.Single().WithTimestampBound(mode.TimestampBound).QueryWithOptions(ctx, stmt, opts)
-		return runJqOnRowIter(rowIter, o.RedactRows, jqCode, enc)
+		return runJqOnRowIter(rowIter, o.RedactRows, jqCode, enc, sinks, planFmt)
 	case partitionedDML:
 		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
 	default:
@@ -701,14 +871,36 @@ func runJqOnRowIter(
 	redactRows bool,
 	jqCode *gojq.Code,
 	enc encoder,
+	sinks *outputSinks,
+	planFmt string,
 ) error {
-	defer func() { _ = closeEncoder(enc) }()
-	iter, cleanup, err := jqresult.Execute(jqCode, jqresult.InputLazy, rowIter, nil, redactRows)
+	var lazyOpts []jqresult.LazyOption
+	if sinks.hasPlan {
+		lazyOpts = append(lazyOpts, jqresult.WithOmitQueryPlan())
+	}
+	lazy := jqresult.NewLazy(rowIter, redactRows, lazyOpts...)
+	defer lazy.Stop()
+	printErr := jqresult.Print(enc, jqCode.Run(lazy))
+	closeErr := closeEncoder(enc)
+	if printErr != nil {
+		return printErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	sinks.MarkPrimaryComplete()
+	if sinks.plan == nil {
+		return nil
+	}
+	if err := lazy.Drain(); err != nil {
+		return err
+	}
+	result := lazy.Result()
+	stats, err := result.StatsProto()
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-	return jqresult.Print(enc, iter)
+	return writePlan(sinks.plan, planFmt, result.Metadata, stats)
 }
 
 func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {

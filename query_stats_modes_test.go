@@ -2,19 +2,23 @@ package main
 
 import (
 	"context"
-	"github.com/apstndb/execspansql/internal/grpctest"
-	"github.com/apstndb/spanemuboost"
-	"google.golang.org/api/option"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"encoding/csv"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/execspansql/internal/grpctest"
+	"github.com/apstndb/spanemuboost"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -107,6 +111,7 @@ func TestQueryStatsResponseReachesOutput(t *testing.T) {
 
 type queryStatsModeServer struct {
 	sppb.UnimplementedSpannerServer
+	omitValues bool
 }
 
 func (s *queryStatsModeServer) CreateSession(_ context.Context, req *sppb.CreateSessionRequest) (*sppb.Session, error) {
@@ -114,13 +119,16 @@ func (s *queryStatsModeServer) CreateSession(_ context.Context, req *sppb.Create
 }
 
 func (s *queryStatsModeServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, stream sppb.Spanner_ExecuteStreamingSqlServer) error {
-	if err := stream.Send(&sppb.PartialResultSet{
+	first := &sppb.PartialResultSet{
 		Metadata: &sppb.ResultSetMetadata{RowType: &sppb.StructType{Fields: []*sppb.StructType_Field{{
 			Name: "value",
 			Type: &sppb.Type{Code: sppb.TypeCode_STRING},
 		}}}},
-		Values: []*structpb.Value{structpb.NewStringValue("value")},
-	}); err != nil {
+	}
+	if !s.omitValues {
+		first.Values = []*structpb.Value{structpb.NewStringValue("value")}
+	}
+	if err := stream.Send(first); err != nil {
 		return err
 	}
 
@@ -131,6 +139,160 @@ func (s *queryStatsModeServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, st
 	}
 	stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "Fake Scan"}}}
 	return stream.Send(&sppb.PartialResultSet{Stats: stats})
+}
+
+func startQueryStatsModeServer(t *testing.T, server *queryStatsModeServer) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := grpc.NewServer()
+	sppb.RegisterSpannerServer(grpcServer, server)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("SPANNER_EMULATOR_HOST", listener.Addr().String())
+}
+
+func assertPlanEnvelopeFile(t *testing.T, planPath string) {
+	t.Helper()
+	b, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rs sppb.ResultSet
+	if err := protojson.Unmarshal(b, &rs); err != nil {
+		t.Fatalf("unmarshal plan: %v\n%s", err, b)
+	}
+	if rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
+		t.Fatalf("plan missing metadata: %s", b)
+	}
+	if len(rs.GetRows()) != 0 {
+		t.Fatalf("plan artifact has rows: %#v", rs.GetRows())
+	}
+	if len(rs.GetStats().GetQueryPlan().GetPlanNodes()) == 0 {
+		t.Fatalf("plan missing queryPlan.planNodes: %s", b)
+	}
+}
+
+func TestSplitPlanOutputCLI(t *testing.T) {
+	startQueryStatsModeServer(t, &queryStatsModeServer{})
+
+	t.Run("PROFILE csv", func(t *testing.T) {
+		dir := t.TempDir()
+		rowsPath := filepath.Join(dir, "rows.csv")
+		planPath := filepath.Join(dir, "plan.json")
+		err := runMain(t, []string{
+			"database", "--project", "project", "--instance", "instance",
+			"--sql", "SELECT 'value'",
+			"--query-mode", "PROFILE",
+			"--format", "experimental_csv",
+			"--output", rowsPath,
+			"--plan-output", planPath,
+			"--timeout", "5s",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		csvBytes, err := os.ReadFile(rowsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		csvText := string(csvBytes)
+		if strings.Contains(csvText, "queryPlan") || strings.Contains(csvText, "Fake Scan") {
+			t.Fatalf("CSV contains plan: %s", csvText)
+		}
+		recs, err := csv.NewReader(strings.NewReader(csvText)).ReadAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(recs) != 2 || recs[0][0] != "value" || recs[1][0] != "value" {
+			t.Fatalf("csv records = %#v", recs)
+		}
+		assertPlanEnvelopeFile(t, planPath)
+	})
+
+	t.Run("discard-results", func(t *testing.T) {
+		dir := t.TempDir()
+		rowsPath := filepath.Join(dir, "rows.csv")
+		planPath := filepath.Join(dir, "plan.json")
+		err := runMain(t, []string{
+			"database", "--project", "project", "--instance", "instance",
+			"--sql", "SELECT 'value'",
+			"--query-mode", "PROFILE",
+			"--format", "experimental_csv",
+			"--output", rowsPath,
+			"--plan-output", planPath,
+			"--discard-results",
+			"--timeout", "5s",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(rowsPath); !os.IsNotExist(err) {
+			t.Fatalf("primary file exists after --discard-results: %v", err)
+		}
+		assertPlanEnvelopeFile(t, planPath)
+	})
+
+	t.Run("lazy jq still writes plan after early stop", func(t *testing.T) {
+		dir := t.TempDir()
+		rowsPath := filepath.Join(dir, "rows.json")
+		planPath := filepath.Join(dir, "plan.json")
+		err := runMain(t, []string{
+			"database", "--project", "project", "--instance", "instance",
+			"--sql", "SELECT 'value'",
+			"--query-mode", "PROFILE",
+			"--jq-input-mode", "lazy",
+			"--filter", ".rows[0]",
+			"--output", rowsPath,
+			"--plan-output", planPath,
+			"--timeout", "5s",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertPlanEnvelopeFile(t, planPath)
+	})
+}
+
+func TestSplitPlanOutputZeroRowAndPLAN(t *testing.T) {
+	startQueryStatsModeServer(t, &queryStatsModeServer{omitValues: true})
+
+	for _, mode := range []string{"PROFILE", "PLAN"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			rowsPath := filepath.Join(dir, "rows.csv")
+			planPath := filepath.Join(dir, "plan.json")
+			err := runMain(t, []string{
+				"database", "--project", "project", "--instance", "instance",
+				"--sql", "SELECT 'value'",
+				"--query-mode", mode,
+				"--format", "experimental_csv",
+				"--output", rowsPath,
+				"--plan-output", planPath,
+				"--timeout", "5s",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			csvBytes, err := os.ReadFile(rowsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			recs, err := csv.NewReader(strings.NewReader(string(csvBytes))).ReadAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(recs) != 1 || recs[0][0] != "value" {
+				t.Fatalf("csv records = %#v, want header only", recs)
+			}
+			assertPlanEnvelopeFile(t, planPath)
+		})
+	}
 }
 
 // TestMainSendsAdditionalQueryStatsModes stops at the request boundary because
