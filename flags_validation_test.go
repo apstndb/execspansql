@@ -1,11 +1,13 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner"
+	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/execspansql/jqresult"
 	"go.uber.org/zap"
 )
@@ -216,6 +218,12 @@ func TestValidateExecutionOptions(t *testing.T) {
 			name: "try_partition_allows_single_query",
 			o:    opts{TryPartitionQuery: true},
 			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "try_partition_rejects_priority",
+			o:    opts{TryPartitionQuery: true, Priority: "high"},
+			mode: single{spanner.StrongRead()},
+			err:  "--priority cannot be used with --try-partition-query",
 		},
 		{
 			name: "try_partition_rejects_dml",
@@ -438,6 +446,73 @@ func TestQueryModeForQuery(t *testing.T) {
 				if s.String() != tt.tb.String() {
 					t.Fatalf("queryModeForQuery() tb = %q, want %q", s.String(), tt.tb.String())
 				}
+			}
+		})
+	}
+}
+
+func TestQueryOptionsForPriority(t *testing.T) {
+	t.Parallel()
+
+	mode := sppb.ExecuteSqlRequest_PROFILE
+	tests := []struct {
+		name     string
+		priority string
+		want     sppb.RequestOptions_Priority
+	}{
+		{name: "high", priority: "high", want: sppb.RequestOptions_PRIORITY_HIGH},
+		{name: "low", priority: "low", want: sppb.RequestOptions_PRIORITY_LOW},
+		{name: "medium", priority: "medium", want: sppb.RequestOptions_PRIORITY_MEDIUM},
+		{name: "unspecified", priority: "unspecified", want: sppb.RequestOptions_PRIORITY_UNSPECIFIED},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := queryOptionsFor(mode, tt.priority)
+			if got.Mode == nil || *got.Mode != mode {
+				t.Fatalf("query options mode = %v, want %v", got.Mode, mode)
+			}
+			if got.Priority != tt.want {
+				t.Fatalf("query options priority = %v, want %v", got.Priority, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessFlagsPriority(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	baseArgs := []string{"execspansql", "database", "--project", "project", "--instance", "instance", "--sql", "SELECT 1"}
+	tests := []struct {
+		name    string
+		args    []string
+		want    string
+		wantErr string
+	}{
+		{name: "default", args: baseArgs, want: "unspecified"},
+		{name: "high", args: append(baseArgs, "--priority", "high"), want: "high"},
+		{name: "low", args: append(baseArgs, "--priority", "low"), want: "low"},
+		{name: "medium", args: append(baseArgs, "--priority", "medium"), want: "medium"},
+		{name: "unspecified", args: append(baseArgs, "--priority", "unspecified"), want: "unspecified"},
+		{name: "invalid", args: append(baseArgs, "--priority", "urgent"), wantErr: "--priority must be one of"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Args = tt.args
+			got, err := processFlags()
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("processFlags() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Priority != tt.want {
+				t.Fatalf("priority = %q, want %q", got.Priority, tt.want)
 			}
 		})
 	}
