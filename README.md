@@ -36,6 +36,7 @@ Flags:
   -p, --project=STRING             ID of the project ($CLOUDSDK_CORE_PROJECT).
   -i, --instance=STRING            ID of the instance
                                    ($CLOUDSDK_SPANNER_INSTANCE).
+      --database-role=STRING       Database role to assume for all operations.
       --query-mode="NORMAL"        Query mode.
       --format="json"              Output format.
       --redact-rows                Redact result rows from output
@@ -94,6 +95,15 @@ $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.
 ## Notable features
 
 There are examples omitting some required options.
+
+### Database role
+
+Use `--database-role` to assume a Spanner database role for every operation in the command:
+
+```
+$ execspansql ${DATABASE_ID} --project=${SPANNER_PROJECT} --instance=${SPANNER_INSTANCE} \
+    --database-role=report_reader --sql='SELECT * FROM Singers'
+```
 
 ### Parameter support
 

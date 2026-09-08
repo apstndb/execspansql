@@ -53,6 +53,7 @@ type opts struct {
 	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
 	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
 	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
+	DatabaseRole         string        `name:"database-role" help:"Database role to assume for all operations."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
@@ -417,7 +418,7 @@ func _main() error {
 		}()
 	}
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.LogGrpc, tracingEnabled(o))
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, o.LogGrpc, tracingEnabled(o))
 	if err != nil {
 		return err
 	}
@@ -546,7 +547,7 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 	return csvWriter.Flush()
 }
 
-func newClient(ctx context.Context, project, instance, database string, logGrpcMode string, doTrace bool) (*spanner.Client, error) {
+func newClient(ctx context.Context, project, instance, database, databaseRole string, logGrpcMode string, doTrace bool) (*spanner.Client, error) {
 	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
 
 	var copts []option.ClientOption
@@ -557,8 +558,7 @@ func newClient(ctx context.Context, project, instance, database string, logGrpcM
 	if doTrace {
 		copts = append(copts, option.WithGRPCDialOption(grpc.WithChainStreamInterceptor(interceptor.StreamInterceptor(interceptor.WithDefaultDecorators()))))
 	}
-
-	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{}, copts...)
+	return spanner.NewClientWithConfig(ctx, name, spanner.ClientConfig{DatabaseRole: databaseRole}, copts...)
 }
 
 type encoder interface {
