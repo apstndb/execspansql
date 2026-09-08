@@ -4,6 +4,10 @@
 
 version: 2
 
+release:
+  # Alpha tags must remain GitHub prereleases when the tag workflow publishes.
+  prerelease: auto
+
 before:
   hooks:
     - go mod tidy
