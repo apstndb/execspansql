@@ -48,13 +48,14 @@ func main() {
 }
 
 type opts struct {
-	Database             string        `arg:"" required:"" help:"ID of the database."`
+	Database             string        `arg:"" required:"" help:"ID or fully qualified resource name of the database."`
 	Sql                  string        `name:"sql" xor:"sql" required:"" help:"SQL query text; exclusive with --sql-file."`
 	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
-	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
-	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
+	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" help:"ID of the project; required for a database ID."`
+	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" help:"ID of the instance; required for a database ID."`
 	DatabaseRole         string        `name:"database-role" help:"Database role to assume for all operations."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
+	Priority             string        `name:"priority" enum:"high,low,medium,unspecified" default:"unspecified" help:"Priority for the execute SQL request."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
 	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
@@ -76,6 +77,37 @@ type opts struct {
 		Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
 		ReadTimestamp string `name:"read-timestamp" xor:"timestamp" help:"Perform a query at the given timestamp. (micro-seconds precision)"`
 	} `embed:"" prefix:"" group:"Timestamp Bound"`
+}
+
+func (o opts) Validate() error {
+	_, err := databaseResourceName(o.Project, o.Instance, o.Database)
+	return err
+}
+
+func databaseResourceName(project, instance, database string) (string, error) {
+	if strings.Contains(database, "/") {
+		parts := strings.Split(database, "/")
+		if len(parts) != 6 || parts[0] != "projects" || parts[1] == "" ||
+			parts[2] != "instances" || parts[3] == "" || parts[4] != "databases" || parts[5] == "" {
+			return "", fmt.Errorf("invalid database resource name %q; expected projects/PROJECT/instances/INSTANCE/databases/DATABASE", database)
+		}
+		// Like gcloud resource arguments, an explicit full name takes precedence
+		// over project and instance flags or environment defaults.
+		return database, nil
+	}
+	if database == "" {
+		return "", errors.New("database ID is required")
+	}
+	if project == "" {
+		return "", errors.New("--project is required when database is an ID")
+	}
+	if instance == "" {
+		return "", errors.New("--instance is required when database is an ID")
+	}
+	if strings.ContainsAny(project+instance, "/") {
+		return "", errors.New("--project and --instance must be IDs, not resource names")
+	}
+	return fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database), nil
 }
 
 func (o opts) mergedParams() (map[string]string, error) {
@@ -203,6 +235,13 @@ func validateExecutionOptions(o opts, mode queryMode) error {
 			}
 			return fmt.Errorf("--try-partition-query cannot be used with DML statements")
 		}
+		if o.Priority != "" && o.Priority != "unspecified" {
+			// The v1.90.0 client only puts QueryOptions.Priority on ExecuteSqlRequest
+			// objects returned for later partition execution. This probe only calls
+			// PartitionQuery, whose request has no priority field, so accepting the
+			// flag here would silently drop it.
+			return fmt.Errorf("--priority cannot be used with --try-partition-query")
+		}
 	}
 	if o.TimestampBound.ReadTimestamp != "" || o.TimestampBound.Strong {
 		if _, ok := mode.(single); !ok {
@@ -305,6 +344,16 @@ func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
 
+func queryOptionsFor(mode sppb.ExecuteSqlRequest_QueryMode, priority string) spanner.QueryOptions {
+	priorities := map[string]sppb.RequestOptions_Priority{
+		"high":        sppb.RequestOptions_PRIORITY_HIGH,
+		"low":         sppb.RequestOptions_PRIORITY_LOW,
+		"medium":      sppb.RequestOptions_PRIORITY_MEDIUM,
+		"unspecified": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+	}
+	return spanner.QueryOptions{Mode: &mode, Priority: priorities[priority]}
+}
+
 // dmlRowCountForMode reports whether read-write results should encode exact DML
 // row counts. PLAN mode returns false because execution does not produce a count.
 func dmlRowCountForMode(mode queryMode, opts spanner.QueryOptions) bool {
@@ -390,6 +439,7 @@ func _main() error {
 	}
 
 	mode := sppb.ExecuteSqlRequest_QueryMode(sppb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
+	queryOpts := queryOptionsFor(mode, o.Priority)
 
 	query, err := readFileOrDefault(o.SqlFile, o.Sql)
 	if err != nil {
@@ -453,10 +503,10 @@ func _main() error {
 	}
 
 	if o.Format == "experimental_csv" {
-		return runAndWriteCsv(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+		return runAndWriteCsv(ctx, client, stmt, queryOpts, m, o.RedactRows)
 	}
 
-	return runJqOutput(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o, jqMode, jqCode)
+	return runJqOutput(ctx, client, stmt, queryOpts, m, o, jqMode, jqCode)
 }
 
 func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {
@@ -548,7 +598,10 @@ func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
 }
 
 func newClient(ctx context.Context, project, instance, database, databaseRole string, logGrpcMode string, doTrace bool) (*spanner.Client, error) {
-	name := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
+	name, err := databaseResourceName(project, instance, database)
+	if err != nil {
+		return nil, err
+	}
 
 	var copts []option.ClientOption
 	if logGrpcMode != logGrpcModeOff {

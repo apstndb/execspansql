@@ -21,23 +21,25 @@ This tool is still pre-release quality and none of guarantees.
 
 You can use [released binaries](https://github.com/apstndb/execspansql/releases).
 ```
-Usage: execspansql --sql=STRING --sql-file=STRING --project=STRING --instance=STRING <database> [flags]
+Usage: execspansql --sql=STRING --sql-file=STRING <database> [flags]
 
 Yet another gcloud spanner databases execute-sql replacement
 
 Arguments:
-  <database>    ID of the database.
+  <database>    ID or fully qualified resource name of the database.
 
 Flags:
   -h, --help                       Show context-sensitive help.
       --sql=STRING                 SQL query text; exclusive with --sql-file.
       --sql-file=STRING            File name contains SQL query; exclusive with
                                    --sql
-  -p, --project=STRING             ID of the project ($CLOUDSDK_CORE_PROJECT).
-  -i, --instance=STRING            ID of the instance
-                                   ($CLOUDSDK_SPANNER_INSTANCE).
+  -p, --project=STRING             ID of the project; required for a database ID
+                                   ($CLOUDSDK_CORE_PROJECT).
+  -i, --instance=STRING            ID of the instance; required for a database
+                                   ID ($CLOUDSDK_SPANNER_INSTANCE).
       --database-role=STRING       Database role to assume for all operations.
       --query-mode="NORMAL"        Query mode.
+      --priority="unspecified"     Priority for the execute SQL request.
       --format="json"              Output format.
       --redact-rows                Redact result rows from output
   -c, --compact-output             Compact JSON output (--compact-output of jq)
@@ -91,6 +93,16 @@ $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.
 $ docker run --rm -t -v "${HOME}/.config/gcloud/application_default_credentials.json:/home/nonroot/.config/gcloud/application_default_credentials.json:ro" \
     ghcr.io/apstndb/execspansql/execspansql:vX.Y.Z -p ${SPANNER_PROJECT} -i ${SPANNER_INSTANCE} ${SPANNER_DATABASE} --sql 'SELECT 1'
 ```
+
+## Database resource names
+
+Pass either a database ID with `--project` and `--instance`, or a fully qualified resource name:
+
+```sh
+execspansql projects/my-project/instances/my-instance/databases/my-database --sql='SELECT 1'
+```
+
+A fully qualified name supplies all three IDs and takes precedence over `--project`, `--instance`, and their `CLOUDSDK_CORE_PROJECT` / `CLOUDSDK_SPANNER_INSTANCE` environment defaults. A short database ID still requires project and instance flags or environment values. As before, gcloud configuration files are not read.
 
 ## Notable features
 
@@ -312,13 +324,17 @@ Note: `--log-grpc=payload` can log request and response payloads (including boun
 
 ![trace.png](docs/trace.png)
 
+### Request priority
+
+Use `--priority=high`, `--priority=medium`, `--priority=low`, or `--priority=unspecified` to set the Spanner execute-SQL request priority. Omitting the flag keeps the unspecified priority. The setting applies to JSON/YAML output (including eager and lazy jq input), CSV, ordinary DML, and Partitioned DML; it does not change read-write transaction commit priority.
+
 ### (Experimental) `--try-partition-query`
 
 Check whether the query can be executed as partition query or not.
 
 By default this checks against the current schema using a strong read. Pass `--read-timestamp` to check partitionability against a historical schema within the database version retention window.
 
-`--try-partition-query` is a query-routing check and rejects jq-related options (`--filter`, `--filter-file`, `--raw-output`, `--compact-output`) and `--jq-input-mode=lazy`.
+`--try-partition-query` is a query-routing check and rejects jq-related options (`--filter`, `--filter-file`, `--raw-output`, `--compact-output`) and `--jq-input-mode=lazy`. It also rejects `--priority=high`, `--priority=medium`, and `--priority=low`: the pinned Spanner Go client cannot put priority on its `PartitionQuery` request, and this check does not execute the returned partitions.
 
 ```
 $ execspansql ${DATABASE_ID} --sql='SELECT * FROM Singers JOIN Albums USING(SingerId)' --try-partition-query
