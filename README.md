@@ -72,6 +72,10 @@ Flags:
       --enable-partitioned-dml     Execute DML statement using Partitioned DML
       --timeout=10m                Maximum time to wait for the SQL query to
                                    complete
+      --reauth="off"               When auto, run gcloud application-default
+                                   login once if local user ADC needs
+                                   reauthentication; off only prints a hint
+                                   ($EXECSPANSQL_REAUTH).
       --try-partition-query        (Experimental) Check whether the query can be
                                    executed as partition query or not
 
@@ -338,6 +342,32 @@ Note: `--log-grpc=payload` can log request and response payloads (including boun
 ### Request priority
 
 Use `--priority=high`, `--priority=medium`, `--priority=low`, or `--priority=unspecified` to set the Spanner execute-SQL request priority. Omitting the flag keeps the unspecified priority. The setting applies to JSON/YAML output (including eager and lazy jq input), CSV, ordinary DML, and Partitioned DML; it does not change read-write transaction commit priority.
+
+### Reauthentication
+
+Google Workspace session policies can invalidate a user Application Default Credentials refresh token (`invalid_grant` with `error_subtype` `invalid_rapt` or `rapt_required`). execspansql never replays SQL after a Spanner RPC has started.
+
+`--reauth=off` (default, also `EXECSPANSQL_REAUTH`) leaves client construction unchanged. If a classified reauth error or a gRPC `Unauthenticated` message containing `invalid_rapt` / `rapt_required` is reported, the process exits non-zero with:
+
+```
+Reauthentication is needed. Please run 'gcloud auth application-default login' to reauthenticate.
+```
+
+`--reauth=auto` is explicit consent for one interactive `gcloud auth application-default login` **before** the Spanner client is created. `auto` means continue as whoever completes that login; the principal is not compared with the previous ADC identity. The login budget is exactly one attempt per process. After a successful login the well-known ADC file is re-read, must still be `authorized_user`, and a token is fetched again. A quota project change is reported on stderr and does not fail the command.
+
+Automatic login runs only when all of the following hold:
+
+* `SPANNER_EMULATOR_HOST` is unset (the emulator does not use these credentials)
+* `GOOGLE_APPLICATION_CREDENTIALS` is unset (gcloud writes the well-known file, not that path)
+* `CLOUDSDK_CONFIG` is unset (gcloud honors it; the Go auth library does not, so the login result would not be picked up)
+* the well-known ADC file exists, is writable, and has `"type": "authorized_user"`
+* stdin and stderr are terminals (stdout may be a pipe)
+* `gcloud` is on `PATH`
+* no test/emulator client options that bypass ADC were injected
+
+`--timeout` applies only to query execution, not to the login. A reauth failure during a long-running statement (after the preflight) is reported with the hint rather than retried. DML is never replayed.
+
+The Go client always reads `$HOME/.config/gcloud/application_default_credentials.json` (`%APPDATA%\gcloud\...` on Windows). If `CLOUDSDK_CONFIG` is set, automatic login is skipped and the hint names that variable.
 
 ### (Experimental) `--try-partition-query`
 

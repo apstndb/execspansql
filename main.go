@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 
 	"encoding/json"
 
@@ -72,6 +73,7 @@ type opts struct {
 	TraceOTLPEndpoint    string        `name:"experimental-trace-otlp-endpoint" default:"localhost:4317" help:"OTLP/gRPC endpoint used with --experimental-trace-otlp."`
 	EnablePartitionedDML bool          `name:"enable-partitioned-dml" help:"Execute DML statement using Partitioned DML"`
 	Timeout              time.Duration `name:"timeout" default:"10m" help:"Maximum time to wait for the SQL query to complete"`
+	Reauth               string        `name:"reauth" enum:"off,auto" default:"off" env:"EXECSPANSQL_REAUTH" help:"When auto, run gcloud application-default login once if local user ADC needs reauthentication; off only prints a hint."`
 	TryPartitionQuery    bool          `name:"try-partition-query" help:"(Experimental) Check whether the query can be executed as partition query or not"`
 	TimestampBound       struct {
 		Strong        bool   `name:"strong" xor:"timestamp" help:"Perform a strong query."`
@@ -406,14 +408,17 @@ func _main() error {
 }
 
 // runCLI accepts client options so transport tests can inspect outgoing RPCs.
-func runCLI(clientOptions ...option.ClientOption) error {
+// Non-empty clientOptions skip the ADC reauth preflight (tests inject insecure
+// dial options that bypass application-default credentials).
+func runCLI(clientOptions ...option.ClientOption) (err error) {
 	o, err := processFlags()
 	if err != nil {
 		os.Exit(1)
 	}
+	defer func() { err = wrapWithHint(err) }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	jqMode, err := jqresult.ParseInputMode(o.JqInputMode)
 	if err != nil {
@@ -462,6 +467,16 @@ func runCLI(clientOptions ...option.ClientOption) error {
 		return err
 	}
 
+	authOpts, err := maybeAuthPreflight(ctx, o, clientOptions, newReauthHooks())
+	if err != nil {
+		return err
+	}
+
+	// Query execution timeout starts after authentication. Login is
+	// human-paced and must not consume --timeout.
+	ctx, cancel := context.WithTimeout(ctx, o.Timeout)
+	defer cancel()
+
 	ctx, tp, err := enableTracing(ctx, o)
 	if err != nil {
 		return err
@@ -474,7 +489,7 @@ func runCLI(clientOptions ...option.ClientOption) error {
 		}()
 	}
 
-	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, string(o.LogGrpc), tracingEnabled(o), clientOptions...)
+	client, err := newClient(ctx, o.Project, o.Instance, o.Database, o.DatabaseRole, string(o.LogGrpc), tracingEnabled(o), append(clientOptions, authOpts...)...)
 	if err != nil {
 		return err
 	}
