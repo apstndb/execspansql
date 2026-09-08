@@ -417,8 +417,15 @@ func runCLI(clientOptions ...option.ClientOption) (err error) {
 	}
 	defer func() { err = wrapWithHint(err) }()
 
+	// The first interrupt cancels ctx so an in-progress gcloud login or query
+	// unwinds cleanly; stop() then restores default signal handling so a
+	// second interrupt still terminates the process if shutdown hangs.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 
 	jqMode, err := jqresult.ParseInputMode(o.JqInputMode)
 	if err != nil {
