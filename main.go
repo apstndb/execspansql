@@ -54,6 +54,7 @@ type opts struct {
 	Project              string        `name:"project" short:"p" env:"CLOUDSDK_CORE_PROJECT" required:"" help:"ID of the project."`
 	Instance             string        `name:"instance" short:"i" env:"CLOUDSDK_SPANNER_INSTANCE" required:"" help:"ID of the instance."`
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE" default:"NORMAL" help:"Query mode."`
+	Priority             string        `name:"priority" enum:"high,low,medium,unspecified" default:"unspecified" help:"Priority for the execute SQL request."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
 	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
@@ -202,6 +203,13 @@ func validateExecutionOptions(o opts, mode queryMode) error {
 			}
 			return fmt.Errorf("--try-partition-query cannot be used with DML statements")
 		}
+		if o.Priority != "" && o.Priority != "unspecified" {
+			// The v1.90.0 client only puts QueryOptions.Priority on ExecuteSqlRequest
+			// objects returned for later partition execution. This probe only calls
+			// PartitionQuery, whose request has no priority field, so accepting the
+			// flag here would silently drop it.
+			return fmt.Errorf("--priority cannot be used with --try-partition-query")
+		}
 	}
 	if o.TimestampBound.ReadTimestamp != "" || o.TimestampBound.Strong {
 		if _, ok := mode.(single); !ok {
@@ -304,6 +312,16 @@ func (s single) isQueryMode()         {}
 func (r readWrite) isQueryMode()      {}
 func (p partitionedDML) isQueryMode() {}
 
+func queryOptionsFor(mode sppb.ExecuteSqlRequest_QueryMode, priority string) spanner.QueryOptions {
+	priorities := map[string]sppb.RequestOptions_Priority{
+		"high":        sppb.RequestOptions_PRIORITY_HIGH,
+		"low":         sppb.RequestOptions_PRIORITY_LOW,
+		"medium":      sppb.RequestOptions_PRIORITY_MEDIUM,
+		"unspecified": sppb.RequestOptions_PRIORITY_UNSPECIFIED,
+	}
+	return spanner.QueryOptions{Mode: &mode, Priority: priorities[priority]}
+}
+
 // dmlRowCountForMode reports whether read-write results should encode exact DML
 // row counts. PLAN mode returns false because execution does not produce a count.
 func dmlRowCountForMode(mode queryMode, opts spanner.QueryOptions) bool {
@@ -389,6 +407,7 @@ func _main() error {
 	}
 
 	mode := sppb.ExecuteSqlRequest_QueryMode(sppb.ExecuteSqlRequest_QueryMode_value[o.QueryMode])
+	queryOpts := queryOptionsFor(mode, o.Priority)
 
 	query, err := readFileOrDefault(o.SqlFile, o.Sql)
 	if err != nil {
@@ -452,10 +471,10 @@ func _main() error {
 	}
 
 	if o.Format == "experimental_csv" {
-		return runAndWriteCsv(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o.RedactRows)
+		return runAndWriteCsv(ctx, client, stmt, queryOpts, m, o.RedactRows)
 	}
 
-	return runJqOutput(ctx, client, stmt, spanner.QueryOptions{Mode: &mode}, m, o, jqMode, jqCode)
+	return runJqOutput(ctx, client, stmt, queryOpts, m, o, jqMode, jqCode)
 }
 
 func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.Statement, opts spanner.QueryOptions, mode queryMode, redactRows bool) error {

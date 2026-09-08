@@ -37,6 +37,7 @@ Flags:
   -i, --instance=STRING            ID of the instance
                                    ($CLOUDSDK_SPANNER_INSTANCE).
       --query-mode="NORMAL"        Query mode.
+      --priority="unspecified"     Priority for the execute SQL request.
       --format="json"              Output format.
       --redact-rows                Redact result rows from output
   -c, --compact-output             Compact JSON output (--compact-output of jq)
@@ -302,13 +303,17 @@ Note: `--log-grpc=payload` can log request and response payloads (including boun
 
 ![trace.png](docs/trace.png)
 
+### Request priority
+
+Use `--priority=high`, `--priority=medium`, `--priority=low`, or `--priority=unspecified` to set the Spanner execute-SQL request priority. Omitting the flag keeps the unspecified priority. The setting applies to JSON/YAML output (including eager and lazy jq input), CSV, ordinary DML, and Partitioned DML; it does not change read-write transaction commit priority.
+
 ### (Experimental) `--try-partition-query`
 
 Check whether the query can be executed as partition query or not.
 
 By default this checks against the current schema using a strong read. Pass `--read-timestamp` to check partitionability against a historical schema within the database version retention window.
 
-`--try-partition-query` is a query-routing check and rejects jq-related options (`--filter`, `--filter-file`, `--raw-output`, `--compact-output`) and `--jq-input-mode=lazy`.
+`--try-partition-query` is a query-routing check and rejects jq-related options (`--filter`, `--filter-file`, `--raw-output`, `--compact-output`) and `--jq-input-mode=lazy`. It also rejects `--priority=high`, `--priority=medium`, and `--priority=low`: the pinned Spanner Go client cannot put priority on its `PartitionQuery` request, and this check does not execute the returned partitions.
 
 ```
 $ execspansql ${DATABASE_ID} --sql='SELECT * FROM Singers JOIN Albums USING(SingerId)' --try-partition-query
