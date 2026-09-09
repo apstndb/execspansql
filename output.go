@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
+	"github.com/apstndb/execspansql/internal/planrender"
 	"github.com/apstndb/execspansql/jqresult"
 	svwriter "github.com/apstndb/spanvalue/writer"
+	"golang.org/x/term"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -19,10 +23,24 @@ const (
 	destDevStdout  = "/dev/stdout"
 	destDevStderr  = "/dev/stderr"
 
-	planModesHelp = "PLAN, PROFILE, or WITH_PLAN_AND_STATS"
+	planModesHelp  = "PLAN, PROFILE, or WITH_PLAN_AND_STATS"
+	planFormatHelp = "json, yaml, text, dot, mermaid, d2, svg, or png"
 )
 
 var errNoQueryPlan = errors.New("query returned no query plan (nil or empty planNodes); not retrying the statement")
+
+// planDestIsTerminal reports whether a stdout/stderr plan destination is a TTY.
+// Tests replace this to avoid depending on the process's real descriptors.
+var planDestIsTerminal = func(kind destKind) bool {
+	switch kind {
+	case destKindStdout:
+		return term.IsTerminal(int(os.Stdout.Fd()))
+	case destKindStderr:
+		return term.IsTerminal(int(os.Stderr.Fd()))
+	default:
+		return false
+	}
+}
 
 type destKind int
 
@@ -85,7 +103,7 @@ func isPlanProducingQueryMode(mode string) bool {
 
 func effectivePlanFormat(o opts) string {
 	if o.PlanFormat != "" {
-		return o.PlanFormat
+		return strings.ToLower(o.PlanFormat)
 	}
 	switch o.Format {
 	case "json", "yaml":
@@ -93,6 +111,115 @@ func effectivePlanFormat(o opts) string {
 	default:
 		return "json"
 	}
+}
+
+func planRenderFlagNames(o opts) []string {
+	var names []string
+	if o.PlanTextStyle != "" {
+		names = append(names, "--plan-text-style")
+	}
+	if o.PlanWrapWidth != 0 {
+		names = append(names, "--plan-wrap-width")
+	}
+	if o.PlanPrint != "" {
+		names = append(names, "--plan-print")
+	}
+	if o.PlanFull {
+		names = append(names, "--plan-full")
+	}
+	if o.PlanShowQuery {
+		names = append(names, "--plan-show-query")
+	}
+	if o.PlanShowQueryStats {
+		names = append(names, "--plan-show-query-stats")
+	}
+	return names
+}
+
+func planRenderOptions(o opts) planrender.Options {
+	ro := planrender.Options{
+		TextStyle:      o.PlanTextStyle,
+		WrapWidth:      o.PlanWrapWidth,
+		PrintSections:  o.PlanPrint,
+		Full:           o.PlanFull,
+		ShowQuery:      o.PlanShowQuery,
+		ShowQueryStats: o.PlanShowQueryStats,
+	}
+	if o.PlanShowQuery {
+		ro.Query = o.Sql
+	}
+	return ro
+}
+
+func validatePlanFormatValue(format string) error {
+	switch strings.ToLower(format) {
+	case "json", "yaml", "text", "dot", "mermaid", "d2", "svg", "png":
+		return nil
+	default:
+		return fmt.Errorf("--plan-format must be %s", planFormatHelp)
+	}
+}
+
+func flagsCannotApply(names []string, format string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	verb := "cannot"
+	if len(names) == 1 {
+		return fmt.Errorf("%s cannot be used with --plan-format=%s", names[0], format)
+	}
+	return fmt.Errorf("%s %s be used with --plan-format=%s", strings.Join(names, ", "), verb, format)
+}
+
+func validatePlanRenderOptions(o opts) error {
+	format := effectivePlanFormat(o)
+	var textFlags, graphFlags []string
+	if o.PlanTextStyle != "" {
+		textFlags = append(textFlags, "--plan-text-style")
+	}
+	if o.PlanWrapWidth != 0 {
+		textFlags = append(textFlags, "--plan-wrap-width")
+	}
+	if o.PlanPrint != "" {
+		textFlags = append(textFlags, "--plan-print")
+	}
+	if o.PlanFull {
+		graphFlags = append(graphFlags, "--plan-full")
+	}
+	if o.PlanShowQuery {
+		graphFlags = append(graphFlags, "--plan-show-query")
+	}
+	if o.PlanShowQueryStats {
+		graphFlags = append(graphFlags, "--plan-show-query-stats")
+	}
+
+	switch format {
+	case "json", "yaml":
+		return flagsCannotApply(append(append([]string{}, textFlags...), graphFlags...), format)
+	case "text":
+		if err := flagsCannotApply(graphFlags, format); err != nil {
+			return err
+		}
+	default:
+		if err := flagsCannotApply(textFlags, format); err != nil {
+			return err
+		}
+	}
+
+	if format == "json" || format == "yaml" {
+		return nil
+	}
+	pf, err := planrender.ParseFormat(format)
+	if err != nil {
+		return fmt.Errorf("--plan-format must be %s", planFormatHelp)
+	}
+	if err := planRenderOptions(o).Validate(pf); err != nil {
+		return err
+	}
+	if pf.IsBinary() && planDestIsTerminal(resolveDestination(o.PlanOutput).kind) {
+		return fmt.Errorf("--plan-format=png cannot write to a terminal; use a file or redirect")
+	}
+	return nil
 }
 
 func validatePlanOutputOptions(o opts) error {
@@ -103,8 +230,13 @@ func validatePlanOutputOptions(o opts) error {
 	if o.DiscardResults && !hasPlan {
 		return fmt.Errorf("--discard-results requires --plan-output")
 	}
-	if o.PlanFormat != "" && o.PlanFormat != "json" && o.PlanFormat != "yaml" {
-		return fmt.Errorf("--plan-format must be json or yaml")
+	if names := planRenderFlagNames(o); len(names) > 0 && !hasPlan {
+		return fmt.Errorf("%s requires --plan-output", strings.Join(names, ", "))
+	}
+	if o.PlanFormat != "" {
+		if err := validatePlanFormatValue(o.PlanFormat); err != nil {
+			return err
+		}
 	}
 	if !hasPlan {
 		return nil
@@ -122,7 +254,7 @@ func validatePlanOutputOptions(o opts) error {
 	if o.EnablePartitionedDML {
 		return fmt.Errorf("--plan-output cannot be combined with --enable-partitioned-dml")
 	}
-	return nil
+	return validatePlanRenderOptions(o)
 }
 
 func validateDestinations(o opts) error {
@@ -432,13 +564,23 @@ func stripQueryPlanForPrimary(rs *sppb.ResultSet) (planStats *sppb.ResultSetStat
 	return planStats, metadata
 }
 
-func writePlan(w io.Writer, format string, metadata *sppb.ResultSetMetadata, stats *sppb.ResultSetStats) error {
+func writePlan(ctx context.Context, w io.Writer, format string, metadata *sppb.ResultSetMetadata, stats *sppb.ResultSetStats, o opts) error {
 	if w == nil {
 		return nil
 	}
 	if !hasUsableQueryPlan(stats) {
 		return errNoQueryPlan
 	}
+	format = strings.ToLower(format)
+	switch format {
+	case "json", "yaml":
+		return writePlanEnvelope(w, format, metadata, stats)
+	default:
+		return renderPlan(ctx, w, format, metadata, stats, o)
+	}
+}
+
+func writePlanEnvelope(w io.Writer, format string, metadata *sppb.ResultSetMetadata, stats *sppb.ResultSetStats) error {
 	envelope := &sppb.ResultSet{
 		Metadata: metadata,
 		Stats:    stats,
@@ -456,6 +598,25 @@ func writePlan(w io.Writer, format string, metadata *sppb.ResultSetMetadata, sta
 		return err
 	}
 	return closeEncoder(enc)
+}
+
+func renderPlan(ctx context.Context, w io.Writer, format string, metadata *sppb.ResultSetMetadata, stats *sppb.ResultSetStats, o opts) error {
+	pf, err := planrender.ParseFormat(format)
+	if err != nil {
+		return err
+	}
+	var rowType *sppb.StructType
+	if metadata != nil {
+		rowType = metadata.GetRowType()
+	}
+	err = planrender.Render(ctx, w, pf, rowType, stats, planRenderOptions(o))
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, planrender.ErrNoQueryPlan) {
+		return errNoQueryPlan
+	}
+	return fmt.Errorf("query succeeded, plan rendering failed: %w", err)
 }
 
 func statsFromWriterResult(r *svwriter.RowIteratorResult, encodeRowCount bool) (*sppb.ResultSetStats, error) {

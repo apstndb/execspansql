@@ -60,7 +60,13 @@ type opts struct {
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format of the primary document."`
 	Output               string        `name:"output" short:"o" default:"-" help:"Destination of the primary document. Use - for stdout; /dev/stdout and /dev/stderr are mapped in-process."`
 	PlanOutput           string        `name:"plan-output" help:"Write the query-plan artifact here and strip stats.queryPlan from the primary document. Enables split mode."`
-	PlanFormat           string        `name:"plan-format" help:"Format of the plan artifact: json or yaml. Defaults to --format when that is json or yaml, otherwise json. Requires --plan-output."`
+	PlanFormat           string        `name:"plan-format" help:"Format of the plan artifact: json, yaml, text, dot, mermaid, d2, svg, or png. Defaults to --format when that is json or yaml, otherwise json. Requires --plan-output."`
+	PlanTextStyle        string        `name:"plan-text-style" help:"Text plan style: current, traditional, or compact. Defaults to current. Requires --plan-format=text." group:"Plan rendering"`
+	PlanWrapWidth        int           `name:"plan-wrap-width" help:"Wrap width for text plans. 0 disables wrapping. Requires --plan-format=text." group:"Plan rendering"`
+	PlanPrint            string        `name:"plan-print" help:"Text plan sections: basic, enhanced, full, none, or a comma-separated section list. Defaults to basic. Requires --plan-format=text." group:"Plan rendering"`
+	PlanFull             bool          `name:"plan-full" help:"Include full graph node detail. Requires a graph --plan-format (dot, mermaid, d2, svg, png)." group:"Plan rendering"`
+	PlanShowQuery        bool          `name:"plan-show-query" help:"Add a query-text node to graph output. Requires a graph --plan-format." group:"Plan rendering"`
+	PlanShowQueryStats   bool          `name:"plan-show-query-stats" help:"Add query statistics to the query-text node. Requires a graph --plan-format." group:"Plan rendering"`
 	DiscardResults       bool          `name:"discard-results" help:"Do not write the primary document (plan-only). Requires --plan-output."`
 	RedactRows           bool          `name:"redact-rows" help:"Redact result rows from output"`
 	CompactOutput        bool          `name:"compact-output" short:"c" help:"Compact JSON output (--compact-output of jq)"`
@@ -470,6 +476,7 @@ func runCLI(clientOptions ...option.ClientOption) (err error) {
 	if err != nil {
 		return err
 	}
+	o.Sql = query
 
 	tb, err := parseTimestampBound(o.TimestampBound.ReadTimestamp)
 	if err != nil {
@@ -599,7 +606,7 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 		if result != nil {
 			md = result.Metadata
 		}
-		return writePlan(sinks.plan, planFmt, md, stats)
+		return writePlan(ctx, sinks.plan, planFmt, md, stats, o)
 	}
 	writePlanFromDrain := func(result *spaniter.RowIteratorResult) error {
 		if sinks.plan == nil {
@@ -612,7 +619,7 @@ func runAndWriteCsv(ctx context.Context, client *spanner.Client, stmt spanner.St
 		if err != nil {
 			return err
 		}
-		return writePlan(sinks.plan, planFmt, result.Metadata, stats)
+		return writePlan(ctx, sinks.plan, planFmt, result.Metadata, stats, o)
 	}
 
 	switch mode := mode.(type) {
@@ -850,7 +857,7 @@ func runJqOutput(
 		}
 		sinks.MarkPrimaryComplete()
 		if sinks.plan != nil {
-			return wrap(writePlan(sinks.plan, planFmt, metadata, planStats))
+			return wrap(writePlan(ctx, sinks.plan, planFmt, metadata, planStats, o))
 		}
 		return nil
 	}
@@ -871,7 +878,7 @@ func runJqOutput(
 			if err != nil {
 				return err
 			}
-			return writePlan(sinks.plan, planFmt, result.Metadata, stats)
+			return writePlan(ctx, sinks.plan, planFmt, result.Metadata, stats, o)
 		}
 		writer := sinks.primary
 		if writer == nil {
@@ -881,7 +888,7 @@ func runJqOutput(
 		if err != nil {
 			return err
 		}
-		return runJqOnRowIter(rowIter, o.RedactRows, jqCode, enc, sinks, planFmt)
+		return runJqOnRowIter(ctx, rowIter, o.RedactRows, jqCode, enc, sinks, planFmt, o)
 	case partitionedDML:
 		return fmt.Errorf("--jq-input-mode=lazy is not supported for partitioned DML")
 	default:
@@ -890,12 +897,14 @@ func runJqOutput(
 }
 
 func runJqOnRowIter(
+	ctx context.Context,
 	rowIter *spanner.RowIterator,
 	redactRows bool,
 	jqCode *gojq.Code,
 	enc encoder,
 	sinks *outputSinks,
 	planFmt string,
+	o opts,
 ) error {
 	var lazyOpts []jqresult.LazyOption
 	if sinks.hasPlan {
@@ -923,7 +932,7 @@ func runJqOnRowIter(
 	if err != nil {
 		return err
 	}
-	return writePlan(sinks.plan, planFmt, result.Metadata, stats)
+	return writePlan(ctx, sinks.plan, planFmt, result.Metadata, stats, o)
 }
 
 func newEncoder(writer io.Writer, format string, compactOutput bool, rawOutput bool) (encoder, error) {

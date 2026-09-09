@@ -425,10 +425,60 @@ func TestValidateExecutionOptions(t *testing.T) {
 			err:  "--plan-output cannot be combined with --enable-partitioned-dml",
 		},
 		{
-			name: "plan_format_rejects_unknown",
-			o:    opts{PlanOutput: "plan.json", PlanFormat: "text", QueryMode: "PROFILE"},
+			name: "plan_format_allows_text",
+			o:    opts{PlanOutput: "plan.txt", PlanFormat: "text", QueryMode: "PROFILE"},
 			mode: single{spanner.StrongRead()},
-			err:  "--plan-format must be json or yaml",
+		},
+		{
+			name: "plan_format_allows_svg",
+			o:    opts{PlanOutput: "plan.svg", PlanFormat: "svg", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "plan_format_rejects_unknown",
+			o:    opts{PlanOutput: "plan.json", PlanFormat: "html", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-format must be json, yaml, text, dot, mermaid, d2, svg, or png",
+		},
+		{
+			name: "plan_text_style_requires_plan_output",
+			o:    opts{PlanTextStyle: "compact", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-text-style requires --plan-output",
+		},
+		{
+			name: "plan_text_style_rejects_json",
+			o:    opts{PlanOutput: "plan.json", PlanFormat: "json", PlanTextStyle: "compact", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-text-style cannot be used with --plan-format=json",
+		},
+		{
+			name: "plan_full_rejects_text",
+			o:    opts{PlanOutput: "plan.txt", PlanFormat: "text", PlanFull: true, QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-full cannot be used with --plan-format=text",
+		},
+		{
+			name: "plan_show_query_rejects_yaml",
+			o:    opts{PlanOutput: "plan.yaml", PlanFormat: "yaml", PlanShowQuery: true, QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-show-query cannot be used with --plan-format=yaml",
+		},
+		{
+			name: "plan_wrap_width_rejects_dot",
+			o:    opts{PlanOutput: "plan.dot", PlanFormat: "dot", PlanWrapWidth: 80, QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+			err:  "--plan-wrap-width cannot be used with --plan-format=dot",
+		},
+		{
+			name: "plan_text_style_allows_text",
+			o:    opts{PlanOutput: "plan.txt", PlanFormat: "text", PlanTextStyle: "compact", PlanPrint: "enhanced", QueryMode: "PROFILE"},
+			mode: single{spanner.StrongRead()},
+		},
+		{
+			name: "plan_full_allows_mermaid",
+			o:    opts{PlanOutput: "plan.mmd", PlanFormat: "mermaid", PlanFull: true, PlanShowQuery: true, QueryMode: "PROFILE", Sql: "SELECT 1"},
+			mode: single{spanner.StrongRead()},
 		},
 	}
 

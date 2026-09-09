@@ -14,6 +14,7 @@ Yet another `gcloud spanner databases execute-sql` replacement for better compos
 * Configurable gRPC logging (`off`, `metadata`, `payload` with payload caveat)
 * (Experimental) CSV output
 * Split query-plan and row output (`--plan-output`)
+* In-process query plan rendering (`--plan-format=text|dot|mermaid|d2|svg|png`)
 * (Experimental) Check whether the query can be executed as a partition query or not.
 
 This tool is still pre-release quality and none of guarantees.
@@ -49,9 +50,10 @@ Flags:
       --plan-output=STRING         Write the query-plan artifact here and strip
                                    stats.queryPlan from the primary document.
                                    Enables split mode.
-      --plan-format=STRING         Format of the plan artifact: json or yaml.
-                                   Defaults to --format when that is json or
-                                   yaml, otherwise json. Requires --plan-output.
+      --plan-format=STRING         Format of the plan artifact: json, yaml,
+                                   text, dot, mermaid, d2, svg, or png. Defaults
+                                   to --format when that is json or yaml,
+                                   otherwise json. Requires --plan-output.
       --discard-results            Do not write the primary document
                                    (plan-only). Requires --plan-output.
       --redact-rows                Redact result rows from output
@@ -90,6 +92,21 @@ Flags:
                                    ($EXECSPANSQL_REAUTH).
       --try-partition-query        (Experimental) Check whether the query can be
                                    executed as partition query or not
+
+Plan rendering
+  --plan-text-style=STRING    Text plan style: current, traditional, or compact.
+                              Defaults to current. Requires --plan-format=text.
+  --plan-wrap-width=INT       Wrap width for text plans. 0 disables wrapping.
+                              Requires --plan-format=text.
+  --plan-print=STRING         Text plan sections: basic, enhanced, full, none,
+                              or a comma-separated section list. Defaults to
+                              basic. Requires --plan-format=text.
+  --plan-full                 Include full graph node detail. Requires a graph
+                              --plan-format (dot, mermaid, d2, svg, png).
+  --plan-show-query           Add a query-text node to graph output. Requires a
+                              graph --plan-format.
+  --plan-show-query-stats     Add query statistics to the query-text node.
+                              Requires a graph --plan-format.
 
 Timestamp Bound
   --strong                   Perform a strong query.
@@ -149,7 +166,7 @@ Setting `--plan-output` switches from the default combined document to split mod
 |------|---------|---------|
 | `--output PATH` (`-o`) | `-` | Destination of the primary document (metadata, rows, `stats` without `queryPlan`). |
 | `--plan-output PATH` | unset | Enables split mode: write the plan artifact here and remove `stats.queryPlan` from the primary document. |
-| `--plan-format json\|yaml` | follows `--format` when that is `json` or `yaml`, otherwise `json` | Format of the plan artifact. |
+| `--plan-format json\|yaml\|text\|dot\|mermaid\|d2\|svg\|png` | follows `--format` when that is `json` or `yaml`, otherwise `json` | Format of the plan artifact. `json`/`yaml` write a `ResultSet` envelope; the others render in-process. |
 | `--discard-results` | off | Do not write the primary document (plan-only). Requires `--plan-output`. |
 
 `--redact-rows` is independent of `--discard-results`: redact still emits metadata and a CSV header; discard writes no primary bytes at all.
@@ -186,6 +203,37 @@ $ execspansql ${DATABASE_ID} --query-mode=PROFILE \
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PROFILE --discard-results \
     --plan-output=plan.json --sql='SELECT * FROM Singers'
+```
+
+Renderer formats write through the same `--plan-output` sink. `--plan-format=text` is the built-in equivalent of piping `.stats.queryPlan` into `rendertree`. Graph formats (`dot`, `mermaid`, `d2`, `svg`, `png`) use embedded `spannerplanviz`; `svg`/`png` do not need an external Graphviz install.
+
+| Flag | Applies to | Default |
+|------|------------|---------|
+| `--plan-text-style current\|traditional\|compact` | `text` | `current` |
+| `--plan-wrap-width N` | `text` | `0` (off; never inferred from terminal width) |
+| `--plan-print basic\|enhanced\|full\|none\|<sections>` | `text` | `basic` |
+| `--plan-full` | graph formats | off |
+| `--plan-show-query` | graph formats | off |
+| `--plan-show-query-stats` | graph formats | off |
+
+`--redact-rows` does not redact plans: predicates and metadata can still contain literals. `png` to a terminal (`--plan-output=-` or `/dev/stderr` when that fd is a TTY) is rejected; redirect or write a file instead. Renderer-only flags that do not apply to the chosen `--plan-format` are errors, not silent no-ops.
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=experimental_csv \
+    --output=- --plan-output=/dev/stderr --plan-format=text \
+    --sql='SELECT * FROM Singers'
+```
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --redact-rows \
+    --discard-results --plan-output=- --plan-format=text \
+    --sql='SELECT * FROM Singers'
+```
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE --discard-results \
+    --plan-output=plan.svg --plan-format=svg --plan-full \
+    --sql='SELECT * FROM Singers'
 ```
 
 ### Parameter support
@@ -261,7 +309,15 @@ Output expands top-level `gojq.Iter` to one JSON/YAML document per row (JSONL-st
 
 #### Example: Extract QueryPlan
 
-[rendertree] command takes QueryPlan, and it can be extracted by jq filter.
+`--plan-output` with `--plan-format=text` renders the plan without a second binary. The jq + [rendertree] pipeline remains available for the combined document.
+
+```
+$ execspansql ${DATABASE_ID} --query-mode=PROFILE \
+              --sql='SELECT * FROM Singers@{FORCE_INDEX=SingersByFirstLastName}' \
+              --discard-results --plan-output=- --plan-format=text
+```
+
+[rendertree] can still consume `.stats.queryPlan` from the combined JSON document:
 
 ```
 $ execspansql ${DATABASE_ID} --query-mode=PROFILE --format=json \
@@ -453,3 +509,6 @@ exit status 1
 * Non-`NORMAL` query modes (`PLAN`, `PROFILE`, `WITH_PLAN_AND_STATS`, and `WITH_STATS`) cannot be combined with `--enable-partitioned-dml`. The Partitioned DML client path ignores query mode and would execute writes.
 * `--plan-output` requires a plan-producing query mode and cannot be combined with `--try-partition-query` or `--enable-partitioned-dml`.
 * Split mode disables jq early stop so the plan artifact can be captured after the last `PartialResultSet`.
+* `--plan-format=png` cannot write to a terminal; use a file or a redirected stdout/stderr.
+* `--redact-rows` does not redact query plans.
+* The Spanner emulator often omits `planNodes` from PLAN/PROFILE results; `--plan-output` then publishes the primary document and exits non-zero without a plan file.

@@ -137,7 +137,11 @@ func (s *queryStatsModeServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, st
 			"summary": structpb.NewStringValue("test stats"),
 		}},
 	}
-	stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "Fake Scan"}}}
+	stats.QueryPlan = &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{
+		Index:       0,
+		Kind:        sppb.PlanNode_RELATIONAL,
+		DisplayName: "Fake Scan",
+	}}}
 	return stream.Send(&sppb.PartialResultSet{Stats: stats})
 }
 
@@ -338,4 +342,80 @@ func TestMainSendsAdditionalQueryStatsModes(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestPlanRenderCLI(t *testing.T) {
+	startQueryStatsModeServer(t, &queryStatsModeServer{})
+
+	t.Run("text", func(t *testing.T) {
+		dir := t.TempDir()
+		planPath := filepath.Join(dir, "plan.txt")
+		err := runMain(t, []string{
+			"database", "--project", "project", "--instance", "instance",
+			"--sql", "SELECT 'value'",
+			"--query-mode", "PROFILE",
+			"--discard-results",
+			"--plan-output", planPath,
+			"--plan-format", "text",
+			"--timeout", "5s",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(planPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "Fake Scan") {
+			t.Fatalf("text plan = %s", b)
+		}
+	})
+
+	t.Run("mermaid", func(t *testing.T) {
+		dir := t.TempDir()
+		planPath := filepath.Join(dir, "plan.mmd")
+		err := runMain(t, []string{
+			"database", "--project", "project", "--instance", "instance",
+			"--sql", "SELECT 'value'",
+			"--query-mode", "PROFILE",
+			"--discard-results",
+			"--plan-output", planPath,
+			"--plan-format", "mermaid",
+			"--timeout", "5s",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(planPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "Fake") {
+			t.Fatalf("mermaid plan = %s", b)
+		}
+	})
+
+	t.Run("svg", func(t *testing.T) {
+		dir := t.TempDir()
+		planPath := filepath.Join(dir, "plan.svg")
+		err := runMain(t, []string{
+			"database", "--project", "project", "--instance", "instance",
+			"--sql", "SELECT 'value'",
+			"--query-mode", "PROFILE",
+			"--discard-results",
+			"--plan-output", planPath,
+			"--plan-format", "svg",
+			"--timeout", "5s",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(planPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "<svg") {
+			t.Fatalf("svg plan = %s", b)
+		}
+	})
 }
