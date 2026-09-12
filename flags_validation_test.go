@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -537,9 +536,6 @@ func TestQueryOptionsForPriority(t *testing.T) {
 }
 
 func TestProcessFlagsPriority(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
-
 	baseArgs := []string{"execspansql", "database", "--project", "project", "--instance", "instance", "--sql", "SELECT 1"}
 	tests := []struct {
 		name    string
@@ -557,8 +553,7 @@ func TestProcessFlagsPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Args = tt.args
-			got, err := processFlags()
+			got, err := processFlags(tt.args[1:])
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("processFlags() error = %v, want %q", err, tt.wantErr)

@@ -154,9 +154,6 @@ func TestWrapWithHintMentionsEnv(t *testing.T) {
 }
 
 func TestProcessFlagsReauth(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
-
 	base := []string{"execspansql", "database", "--project", "p", "--instance", "i", "--sql", "SELECT 1"}
 	tests := []struct {
 		name    string
@@ -179,8 +176,7 @@ func TestProcessFlagsReauth(t *testing.T) {
 				t.Setenv("EXECSPANSQL_REAUTH", "")
 				_ = os.Unsetenv("EXECSPANSQL_REAUTH")
 			}
-			os.Args = tt.args
-			got, err := processFlags()
+			got, err := processFlags(tt.args[1:])
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("processFlags() error = %v, want %q", err, tt.wantErr)
