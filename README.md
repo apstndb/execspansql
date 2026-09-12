@@ -182,7 +182,7 @@ In split mode the two destinations must differ. Both on stdout (any spelling) is
 Document contents:
 
 - Primary document: the current `ResultSet` with `stats.queryPlan` removed. `stats.queryStats` and `stats.rowCount*` stay. CSV primary output is unchanged (rows only).
-- Plan artifact: a `ResultSet` envelope without `rows` — `metadata` (for `rowType`) plus the full `stats` (`queryPlan`, `queryStats`, `rowCount*`). jq flags apply only to the primary document; the plan is never filtered.
+- Plan artifact: `json`/`yaml` write a `ResultSet` envelope without `rows` — `metadata` (for `rowType`) plus the full `stats` (`queryPlan`, `queryStats`, `rowCount*`). Renderer formats write the rendered bytes instead. jq flags apply only to the primary document; the plan is never filtered.
 
 Split mode disables jq early stop: remaining rows are drained so the final plan/stats can be captured, at the same server cost as reading everything. Rows drained only for the plan are not retained. `--jq-input-mode=lazy` still caches rows that jq actually consumed.
 
