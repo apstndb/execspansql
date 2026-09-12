@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -44,6 +45,7 @@ func TestEffectivePlanFormat(t *testing.T) {
 		want string
 	}{
 		{name: "explicit_yaml", o: opts{PlanFormat: "yaml", Format: "json"}, want: "yaml"},
+		{name: "explicit_text_case", o: opts{PlanFormat: "TEXT", Format: "json"}, want: "text"},
 		{name: "follows_json", o: opts{Format: "json"}, want: "json"},
 		{name: "follows_yaml", o: opts{Format: "yaml"}, want: "yaml"},
 		{name: "csv_defaults_to_json", o: opts{Format: "experimental_csv"}, want: "json"},
@@ -263,7 +265,7 @@ func TestWritePlanEnvelopeOmitsRows(t *testing.T) {
 	planStats, md := stripQueryPlanForPrimary(rs)
 
 	var buf bytes.Buffer
-	if err := writePlan(&buf, "json", md, planStats); err != nil {
+	if err := writePlan(context.Background(), &buf, "json", md, planStats, opts{}); err != nil {
 		t.Fatal(err)
 	}
 	m, err := jqresult.ProtoToMap(&sppb.ResultSet{Metadata: md, Stats: planStats})
@@ -279,7 +281,7 @@ func TestWritePlanEnvelopeOmitsRows(t *testing.T) {
 	}
 
 	var yamlBuf bytes.Buffer
-	if err := writePlan(&yamlBuf, "yaml", md, planStats); err != nil {
+	if err := writePlan(context.Background(), &yamlBuf, "yaml", md, planStats, opts{}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(yamlBuf.String(), "queryPlan") {
@@ -290,9 +292,9 @@ func TestWritePlanEnvelopeOmitsRows(t *testing.T) {
 func TestWritePlanRejectsEmptyPlan(t *testing.T) {
 	t.Parallel()
 
-	err := writePlan(ioDiscardWriter{}, "json", nil, &sppb.ResultSetStats{
+	err := writePlan(context.Background(), ioDiscardWriter{}, "json", nil, &sppb.ResultSetStats{
 		QueryPlan: &sppb.QueryPlan{},
-	})
+	}, opts{})
 	if !errors.Is(err, errNoQueryPlan) {
 		t.Fatalf("error = %v, want errNoQueryPlan", err)
 	}
@@ -512,6 +514,17 @@ func TestProcessFlagsOutputDefaults(t *testing.T) {
 	if got.Output != "rows.json" || got.PlanOutput != "plan.json" || got.PlanFormat != "yaml" || !got.DiscardResults {
 		t.Fatalf("got %+v", got)
 	}
+
+	args = []string{"database", "--project", "p", "--instance", "i", "--sql", "SELECT 1",
+		"--plan-output", "plan.txt", "--plan-format", "text", "--plan-text-style", "compact",
+		"--plan-wrap-width", "80", "--plan-print", "enhanced"}
+	got, err = processFlags(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PlanFormat != "text" || got.PlanTextStyle != "compact" || got.PlanWrapWidth != 80 || got.PlanPrint != "enhanced" {
+		t.Fatalf("renderer flags: %+v", got)
+	}
 }
 
 func TestSplitModeValidationBeforeClient(t *testing.T) {
@@ -530,11 +543,97 @@ func TestSplitModeValidationBeforeClient(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "PLAN, PROFILE, or WITH_PLAN_AND_STATS") {
 		t.Fatalf("NORMAL plan-output: error = %v", err)
 	}
+
+	orig := planDestIsTerminal
+	planDestIsTerminal = func(kind destKind) bool { return kind == destKindStdout }
+	defer func() { planDestIsTerminal = orig }()
+	err = runMain(t, []string{
+		"database", "--project", "p", "--instance", "i", "--sql", "SELECT 1",
+		"--query-mode", "PROFILE", "--discard-results", "--plan-output", "-",
+		"--plan-format", "png",
+	})
+	if err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("png to TTY: error = %v", err)
+	}
 }
 
 type ioDiscardWriter struct{}
 
 func (ioDiscardWriter) Write([]byte) (int, error) { return 0, nil }
+
+func TestWritePlanTextContainsOperator(t *testing.T) {
+	t.Parallel()
+
+	rs := profileResultSetForSplitTest()
+	planStats, md := stripQueryPlanForPrimary(rs)
+	var buf bytes.Buffer
+	if err := writePlan(context.Background(), &buf, "text", md, planStats, opts{}); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Scan") {
+		t.Fatalf("text plan = %q, want Scan", got)
+	}
+	if strings.Contains(got, "queryPlan") {
+		t.Fatalf("text plan still looks like JSON: %s", got)
+	}
+}
+
+func TestWritePlanGraphSmoke(t *testing.T) {
+	t.Parallel()
+
+	rs := profileResultSetForSplitTest()
+	planStats, md := stripQueryPlanForPrimary(rs)
+	for _, format := range []string{"dot", "mermaid", "d2"} {
+		var buf bytes.Buffer
+		if err := writePlan(context.Background(), &buf, format, md, planStats, opts{}); err != nil {
+			t.Fatalf("%s: %v", format, err)
+		}
+		if !strings.Contains(buf.String(), "Scan") {
+			t.Fatalf("%s plan = %q, want Scan", format, buf.String())
+		}
+	}
+}
+
+func TestWritePlanPNGMagic(t *testing.T) {
+	rs := profileResultSetForSplitTest()
+	planStats, md := stripQueryPlanForPrimary(rs)
+	var buf bytes.Buffer
+	if err := writePlan(context.Background(), &buf, "png", md, planStats, opts{}); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.Bytes()
+	if len(got) < 8 || !bytes.Equal(got[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
+		t.Fatalf("png magic = %x", got[:min(8, len(got))])
+	}
+}
+
+func TestValidatePNGOnTerminal(t *testing.T) {
+	orig := planDestIsTerminal
+	t.Cleanup(func() { planDestIsTerminal = orig })
+
+	planDestIsTerminal = func(kind destKind) bool {
+		return kind == destKindStdout || kind == destKindStderr
+	}
+	err := validatePlanOutputOptions(opts{
+		PlanOutput: "-", PlanFormat: "png", QueryMode: "PROFILE", DiscardResults: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("error = %v, want terminal refusal", err)
+	}
+
+	planDestIsTerminal = func(destKind) bool { return false }
+	if err := validatePlanOutputOptions(opts{
+		PlanOutput: "-", PlanFormat: "png", QueryMode: "PROFILE", DiscardResults: true,
+	}); err != nil {
+		t.Fatalf("redirected stdout png: %v", err)
+	}
+	if err := validatePlanOutputOptions(opts{
+		PlanOutput: "plan.png", PlanFormat: "png", QueryMode: "PROFILE",
+	}); err != nil {
+		t.Fatalf("file png: %v", err)
+	}
+}
 
 func profileResultSetForSplitTest() *sppb.ResultSet {
 	return &sppb.ResultSet{
@@ -545,7 +644,11 @@ func profileResultSetForSplitTest() *sppb.ResultSet {
 		},
 		Rows: []*structpb.ListValue{{Values: []*structpb.Value{structpb.NewStringValue("1")}}},
 		Stats: &sppb.ResultSetStats{
-			QueryPlan: &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{DisplayName: "Scan"}}},
+			QueryPlan: &sppb.QueryPlan{PlanNodes: []*sppb.PlanNode{{
+				Index:       0,
+				Kind:        sppb.PlanNode_RELATIONAL,
+				DisplayName: "Scan",
+			}}},
 			QueryStats: &structpb.Struct{Fields: map[string]*structpb.Value{
 				"elapsed_time": structpb.NewStringValue("1 msecs"),
 			}},

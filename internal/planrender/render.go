@@ -75,6 +75,11 @@ func Render(ctx context.Context, w io.Writer, format Format, rowType *sppb.Struc
 	return renderGraph(ctx, w, format, rowType, stats, opts)
 }
 
+// Validate reports whether opts apply to format.
+func (o Options) Validate(format Format) error {
+	return o.validate(format)
+}
+
 func (o Options) validate(format Format) error {
 	if o.WrapWidth < 0 {
 		return fmt.Errorf("WrapWidth cannot be negative: %d", o.WrapWidth)

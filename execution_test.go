@@ -25,6 +25,7 @@ type executionServer struct {
 	commits    atomic.Int32
 	retry      bool
 	failCommit bool
+	queryPlan  *sppb.QueryPlan
 }
 
 func (s *executionServer) BeginTransaction(context.Context, *sppb.BeginTransactionRequest) (*sppb.Transaction, error) {
@@ -39,7 +40,7 @@ func (s *executionServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, stream 
 			RowType:     &sppb.StructType{Fields: []*sppb.StructType_Field{{Name: "value", Type: &sppb.Type{Code: sppb.TypeCode_STRING}}}},
 		},
 		Values: []*structpb.Value{structpb.NewStringValue(fmt.Sprintf("attempt-%d", attempt))},
-		Stats:  &sppb.ResultSetStats{RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: 1}},
+		Stats:  &sppb.ResultSetStats{QueryPlan: s.queryPlan, RowCount: &sppb.ResultSetStats_RowCountExact{RowCountExact: 1}},
 	})
 }
 

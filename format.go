@@ -34,7 +34,7 @@ func (c *preparedCommand) writeResult(ctx context.Context, result *queryResult, 
 		if err != nil {
 			return err
 		}
-		return writePlan(sinks.plan, effectivePlanFormat(c.opts), result.Metadata, stats)
+		return c.writePlan(ctx, sinks, result.Metadata, stats)
 	}
 
 	enc, err := newEncoder(sinks.primary, c.Format, c.CompactOutput, c.JqRawOutput)
@@ -62,7 +62,7 @@ func (c *preparedCommand) writeResult(ctx context.Context, result *queryResult, 
 	if err != nil {
 		return err
 	}
-	return writePlan(sinks.plan, effectivePlanFormat(c.opts), drained.Metadata, stats)
+	return c.writePlan(ctx, sinks, drained.Metadata, stats)
 }
 
 func (c *preparedCommand) writeResultSet(ctx context.Context, rs *sppb.ResultSet, sinks *outputSinks) error {
@@ -90,7 +90,7 @@ func (c *preparedCommand) writeResultSet(ctx context.Context, rs *sppb.ResultSet
 		}
 	}
 	sinks.MarkPrimaryComplete()
-	return writePlan(sinks.plan, effectivePlanFormat(c.opts), metadata, stats)
+	return c.writePlan(ctx, sinks, metadata, stats)
 }
 
 // printJQ owns encoder completion on both success and failure. Use the caller's
@@ -102,4 +102,11 @@ func printJQ(ctx context.Context, code *gojq.Code, input any, enc encoder) (err 
 		}
 	}()
 	return jqresult.Print(enc, code.RunWithContext(ctx, input))
+}
+
+// Use the prepared statement for query text so rendering never reloads SQL files.
+func (c *preparedCommand) writePlan(ctx context.Context, sinks *outputSinks, metadata *sppb.ResultSetMetadata, stats *sppb.ResultSetStats) error {
+	o := c.opts
+	o.Sql = c.statement.SQL
+	return writePlan(ctx, sinks.plan, effectivePlanFormat(o), metadata, stats, o)
 }
