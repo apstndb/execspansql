@@ -76,10 +76,7 @@ func TestPartitionedDMLQueryMode(t *testing.T) {
 
 func runMain(t *testing.T, args []string, options ...option.ClientOption) error {
 	t.Helper()
-	old := os.Args
-	os.Args = append([]string{"execspansql"}, args...)
-	defer func() { os.Args = old }()
-	return runCLI(options...)
+	return runCLI(t.Context(), args, options...)
 }
 
 func readPdmlQueryModeV(t *testing.T, ctx context.Context, client *spanner.Client) int64 {

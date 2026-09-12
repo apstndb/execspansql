@@ -5,7 +5,10 @@
 `execspansql` is a Go CLI for Spanner query execution. It supports SQL parameter loading, multiple output formats (JSON/YAML/CSV), optional JQ filtering, and tracing options.
 
 Primary package layout:
-- `main.go` / `trace.go` - CLI entrypoint, command wiring, execution flow.
+- `main.go` / `trace.go` - CLI entrypoint, process lifecycle, client and tracing wiring.
+- `command.go` - validated options, resolved SQL/parameters, and compiled jq.
+- `execution.go` - transaction selection and owned query results; DML results become available only after commit.
+- `format.go` / `output.go` - result formatting and destination publication; output errors never replay SQL.
 - `params/` - parameter file parsing and typed conversion helpers.
 - `resultset/` - Spanner result set materialization and formatting helpers.
 - `jqresult/` - JQ compile/execution pipeline and JSON conversion helpers.

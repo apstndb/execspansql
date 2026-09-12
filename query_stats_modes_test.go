@@ -141,7 +141,7 @@ func (s *queryStatsModeServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, st
 	return stream.Send(&sppb.PartialResultSet{Stats: stats})
 }
 
-func startQueryStatsModeServer(t *testing.T, server *queryStatsModeServer) {
+func startQueryStatsModeServer(t *testing.T, server sppb.SpannerServer) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
