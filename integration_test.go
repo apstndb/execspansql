@@ -648,6 +648,39 @@ func TestWithCloudSpannerEmulator(t *testing.T) {
 		})
 	})
 
+	t.Run("CLI DML formats publish committed rows", func(t *testing.T) {
+		t.Setenv("SPANNER_EMULATOR_HOST", env.Emulator().URI())
+		for _, format := range []string{"json", "yaml", "experimental_csv"} {
+			t.Run(format, func(t *testing.T) {
+				const value = "committed-cli-result"
+				out, err := captureStdout(t, func() error {
+					return runMain(t, []string{env.DatabaseID, "--project", env.ProjectID, "--instance", env.InstanceID,
+						"--sql", "UPDATE Singers SET FirstName='" + value + "' WHERE SingerId=1 THEN RETURN FirstName", "--format", format})
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Count(out, value) != 1 {
+					t.Fatalf("expected one committed row: %s", out)
+				}
+				if format != "experimental_csv" && !strings.Contains(out, "rowCountExact") {
+					t.Fatalf("DML count missing: %s", out)
+				}
+				row, err := client.Single().ReadRow(ctx, "Singers", spanner.Key{1}, []string{"FirstName"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var stored string
+				if err := row.Column(0, &stored); err != nil {
+					t.Fatal(err)
+				}
+				if stored != value {
+					t.Fatalf("stored=%q, want %q", stored, value)
+				}
+			})
+		}
+	})
+
 	t.Run("split plan output", func(t *testing.T) {
 		t.Setenv("SPANNER_EMULATOR_HOST", env.Emulator().URI())
 

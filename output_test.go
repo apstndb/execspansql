@@ -439,20 +439,6 @@ func TestDiscardResultsProducesNoPrimaryBytes(t *testing.T) {
 	}
 }
 
-func TestIsCommittedMode(t *testing.T) {
-	t.Parallel()
-
-	if isCommittedMode(single{}) {
-		t.Fatal("single-use read must not count as committed")
-	}
-	if !isCommittedMode(readWrite{}) {
-		t.Fatal("read-write DML must count as committed")
-	}
-	if !isCommittedMode(partitionedDML{}) {
-		t.Fatal("partitioned DML must count as committed")
-	}
-}
-
 func TestMaterializeWithoutRows(t *testing.T) {
 	t.Parallel()
 
@@ -507,11 +493,8 @@ func TestFinishPublishFailureAfterCommitIsWrapped(t *testing.T) {
 }
 
 func TestProcessFlagsOutputDefaults(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
-
-	os.Args = []string{"execspansql", "database", "--project", "p", "--instance", "i", "--sql", "SELECT 1"}
-	got, err := processFlags()
+	args := []string{"database", "--project", "p", "--instance", "i", "--sql", "SELECT 1"}
+	got, err := processFlags(args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,9 +505,9 @@ func TestProcessFlagsOutputDefaults(t *testing.T) {
 		t.Fatalf("unexpected plan flags: %+v", got)
 	}
 
-	os.Args = append([]string{"execspansql", "database", "--project", "p", "--instance", "i", "--sql", "SELECT 1"},
+	args = append([]string{"database", "--project", "p", "--instance", "i", "--sql", "SELECT 1"},
 		"-o", "rows.json", "--plan-output", "plan.json", "--plan-format", "yaml", "--discard-results")
-	got, err = processFlags()
+	got, err = processFlags(args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,10 +515,10 @@ func TestProcessFlagsOutputDefaults(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 
-	os.Args = []string{"execspansql", "database", "--project", "p", "--instance", "i", "--sql", "SELECT 1",
+	args = []string{"database", "--project", "p", "--instance", "i", "--sql", "SELECT 1",
 		"--plan-output", "plan.txt", "--plan-format", "text", "--plan-text-style", "compact",
 		"--plan-wrap-width", "80", "--plan-print", "enhanced"}
-	got, err = processFlags()
+	got, err = processFlags(args)
 	if err != nil {
 		t.Fatal(err)
 	}

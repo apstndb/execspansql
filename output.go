@@ -619,7 +619,7 @@ func renderPlan(ctx context.Context, w io.Writer, format string, metadata *sppb.
 	return fmt.Errorf("query succeeded, plan rendering failed: %w", err)
 }
 
-func statsFromWriterResult(r *svwriter.RowIteratorResult, encodeRowCount bool) (*sppb.ResultSetStats, error) {
+func statsFromWriterResult(r *svwriter.RowIteratorResult) (*sppb.ResultSetStats, error) {
 	if r == nil {
 		return nil, nil
 	}
@@ -632,9 +632,6 @@ func statsFromWriterResult(r *svwriter.RowIteratorResult, encodeRowCount bool) (
 			return nil, fmt.Errorf("encode query stats: %w", err)
 		}
 		stats.QueryStats = qs
-	}
-	if encodeRowCount {
-		stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: r.Stats.RowCount}
 	}
 	if stats.QueryPlan == nil && stats.QueryStats == nil && stats.RowCount == nil {
 		return nil, nil

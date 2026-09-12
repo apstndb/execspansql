@@ -186,6 +186,8 @@ Document contents:
 
 Split mode disables jq early stop: remaining rows are drained so the final plan/stats can be captured, at the same server cost as reading everything. Rows drained only for the plan are not retained. `--jq-input-mode=lazy` still caches rows that jq actually consumed.
 
+DML result rows are buffered until commit before JSON, YAML, or CSV formatting begins. A transaction retry replaces the buffered result rather than emitting another copy. Redacted or discarded rows are not retained. Read-only CSV and lazy jq continue to consume rows incrementally.
+
 If output or rendering fails after a committed DML statement, the process exits non-zero and says so. That failure is not a rollback and the SQL is not replayed.
 
 ```
@@ -306,6 +308,8 @@ In `lazy` mode, `metadata` is populated after the first row is read from Spanner
 `--jq-input-mode=lazy` emits rows incrementally, but rows are cached internally after first materialization and reused, so it is not a strict constant-memory mode for large result sets. Split mode (`--plan-output`) disables jq early stop: remaining rows are still drained so the plan artifact can be written.
 
 Output expands top-level `gojq.Iter` to one JSON/YAML document per row (JSONL-style). Nested `Iter` values inside objects are expanded to arrays on encode.
+
+Ctrl+C cancels both SQL execution and jq processing, including jq computations after SQL has completed. `--timeout` bounds SQL execution; it does not impose a separate deadline on subsequent jq processing.
 
 #### Example: Extract QueryPlan
 
