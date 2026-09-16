@@ -52,14 +52,6 @@ func (r *RowIter) ensureSeq() {
 	r.pull, r.stopSeq = spaniter.PullRowIteratorSeq(r.rowIter, spaniter.WithResult(&r.result))
 }
 
-// Prime reads the first row (or iterator.Done) so metadata is populated.
-// The first row is buffered for the next Next call when present.
-func (r *RowIter) Prime() error {
-	unlock := r.lockIO()
-	defer unlock()
-	return r.primeUnlocked()
-}
-
 func (r *RowIter) primeUnlocked() error {
 	if r.primed || r.stopped {
 		return nil
@@ -94,12 +86,6 @@ func (r *RowIter) nextRow() (*spanner.Row, error) {
 	return row, nil
 }
 
-func (r *RowIter) Next() (any, bool) {
-	unlock := r.lockIO()
-	defer unlock()
-	return r.nextUnlocked()
-}
-
 func (r *RowIter) nextUnlocked() (any, bool) {
 	if r.redact || r.stopped {
 		return nil, false
@@ -116,13 +102,6 @@ func (r *RowIter) nextUnlocked() (any, bool) {
 		return err, true
 	}
 	return v, true
-}
-
-// Drain exhausts the Spanner row iterator. When redact is false, drained rows are returned.
-func (r *RowIter) Drain() ([]any, error) {
-	unlock := r.lockIO()
-	defer unlock()
-	return r.drainUnlocked()
 }
 
 func (r *RowIter) drainUnlocked() ([]any, error) {
