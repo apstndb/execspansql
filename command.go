@@ -43,7 +43,7 @@ func prepareCommand(o opts) (*preparedCommand, error) {
 			jqFilter = jqresult.DefaultFilter(jqMode)
 		}
 
-		jqCode, err = jqresult.Compile(jqFilter, jqMode)
+		jqCode, err = jqresult.Compile(jqFilter)
 		if err != nil {
 			return nil, err
 		}

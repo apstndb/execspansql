@@ -28,6 +28,63 @@ func TestRunCLIHelpReturnsWithoutExecution(t *testing.T) {
 	}
 }
 
+func TestRunCLIVersionReturnsWithoutExecution(t *testing.T) {
+	out, err := captureStdout(t, func() error { return runCLI(t.Context(), []string{"--version"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "dev" {
+		t.Fatalf("version = %q, want dev", out)
+	}
+}
+
+func TestProcessFlagsValidationErrorOmitsUsage(t *testing.T) {
+	stderr, err := captureStderr(t, func() error {
+		_, err := processFlags([]string{"db", "--instance", "i", "--sql", "SELECT 1"})
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "--project is required") {
+		t.Fatalf("error = %v, want --project is required", err)
+	}
+	if strings.Contains(stderr, "Usage:") {
+		t.Fatalf("validation error dumped usage: %q", stderr)
+	}
+}
+
+func TestProcessFlagsUnknownFlagOmitsUsage(t *testing.T) {
+	stderr, err := captureStderr(t, func() error {
+		return runCLI(t.Context(), []string{"--unknown-option"})
+	})
+	if err == nil {
+		t.Fatal("expected argument error")
+	}
+	if strings.Contains(stderr, "Usage:") {
+		t.Fatalf("parse error dumped usage: %q", stderr)
+	}
+}
+
+func TestExitStatus(t *testing.T) {
+	t.Parallel()
+
+	if got := exitStatus(nil); got != 0 {
+		t.Fatalf("nil = %d, want 0", got)
+	}
+	if got := exitStatus(errors.New("query failed")); got != exitFailure {
+		t.Fatalf("generic = %d, want %d", got, exitFailure)
+	}
+	if got := exitStatus(wrapCommittedOutputError(errors.New("rename failed"))); got != exitOutputAfterCommit {
+		t.Fatalf("after commit = %d, want %d", got, exitOutputAfterCommit)
+	}
+
+	_, err := processFlags([]string{"--unknown-option"})
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+	if got := exitStatus(err); got != exitUsage {
+		t.Fatalf("parse = %d, want %d (%v)", got, exitUsage, err)
+	}
+}
+
 func TestPrepareCommandFreezesInputs(t *testing.T) {
 	dir := t.TempDir()
 	sql, params, filter := filepath.Join(dir, "query.sql"), filepath.Join(dir, "params.json"), filepath.Join(dir, "filter.jq")
@@ -61,7 +118,7 @@ func TestPrepareCommandFreezesInputs(t *testing.T) {
 func TestPrintJQHonorsCancellation(t *testing.T) {
 	for _, mode := range []jqresult.InputMode{jqresult.InputEager, jqresult.InputLazy} {
 		t.Run(string(mode), func(t *testing.T) {
-			code, err := jqresult.Compile("def spin: spin; spin", mode)
+			code, err := jqresult.Compile("def spin: spin; spin")
 			if err != nil {
 				t.Fatal(err)
 			}
