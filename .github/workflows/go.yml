@@ -26,3 +26,16 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+  windows-gcloud-launch:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Test Windows batch launch
+      run: go test -count=1 -timeout 5m -run "TestRunGcloudADCLoginWindowsFakeCmd|TestWindowsBatchDetectionAndQuoting" .

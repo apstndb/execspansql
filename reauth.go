@@ -310,23 +310,59 @@ func gcloudADCLoginArgs(getenv func(string) string) []string {
 // fixed argument vector. Stdout is attached to stderr so query output is
 // not mixed with gcloud's instructions. Tokens and ADC JSON are not logged.
 //
-// On Windows the SDK installs gcloud as gcloud.cmd. exec.LookPath resolves
-// it through PATHEXT and CreateProcess launches batch files through cmd.exe
-// implicitly, so no explicit interpreter is needed (this is the same
-// mechanism os/exec documents under its cmd.exe quoting caveat). The cmd.exe
-// unquoting differences do not matter here because every argument is a fixed
-// literal without spaces or metacharacters; only the resolved path may
-// contain spaces, and Go quotes argv[0] like any other argument.
+// On Windows the Cloud SDK installs gcloud as gcloud.cmd. CreateProcessW does
+// not launch batch files by itself; Go's os/exec calls CreateProcess directly.
+// The batch file is therefore started through cmd.exe. See windowsBatchCommand.
 func runGcloudADCLogin(ctx context.Context, getenv func(string) string, lookPath func(string) (string, error)) error {
 	bin, err := lookPath("gcloud")
 	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, bin, gcloudADCLoginArgs(getenv)...)
+	cmd := gcloudCommand(ctx, bin, gcloudADCLoginArgs(getenv))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// gcloudCommand starts gcloud. CreateProcessW does not run batch files, so a
+// resolved .cmd or .bat is started through cmd.exe. An .exe is executed
+// directly. os/exec quoting matches CommandLineToArgvW, which cmd.exe does
+// not use, so the batch command line is built separately.
+func gcloudCommand(ctx context.Context, bin string, args []string) *exec.Cmd {
+	if runtime.GOOS == "windows" && isWindowsBatch(bin) {
+		return windowsBatchCommand(ctx, bin, args)
+	}
+	return exec.CommandContext(ctx, bin, args...)
+}
+
+func isWindowsBatch(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cmd", ".bat":
+		return true
+	default:
+		return false
+	}
+}
+
+// windowsCmdCommandLine is the tail passed to cmd.exe. The /s switch strips
+// one surrounding pair of quotes, leaving a quoted batch path and its
+// arguments. Paths and arguments that contain spaces or cmd metacharacters
+// are quoted with doubled quotes.
+func windowsCmdCommandLine(bin string, args []string) string {
+	parts := make([]string, 0, 1+len(args))
+	parts = append(parts, quoteCmdExeArg(bin))
+	for _, arg := range args {
+		parts = append(parts, quoteCmdExeArg(arg))
+	}
+	return `/d /s /c "` + strings.Join(parts, " ") + `"`
+}
+
+func quoteCmdExeArg(s string) string {
+	if s == "" || strings.ContainsAny(s, " \t\"&<>()[]{}^=;!'+,`~%") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
 }
 
 func (h *reauthHooks) tryLogin(ctx context.Context) error {
