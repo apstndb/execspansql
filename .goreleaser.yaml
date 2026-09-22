@@ -15,6 +15,10 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
+    # --version reads main.version. Setting ldflags replaces GoReleaser's
+    # default -s -w plus version/commit/date/builtBy, so keep -s -w here.
+    ldflags:
+      - -s -w -X main.version={{.Version}}
     goos:
       - linux
       - windows

@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"encoding/json"
 
@@ -36,22 +37,46 @@ const (
 	logGrpcModeOff      = "off"
 	logGrpcModeMetadata = "metadata"
 	logGrpcModePayload  = "payload"
+
+	exitFailure           = 1
+	exitUsage             = 2
+	exitOutputAfterCommit = 3
 )
+
+// version is set by GoReleaser via -X main.version={{.Version}}.
+var version = "dev"
 
 func main() {
 	// Keep process-wide signals and exit handling outside the testable runner.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	log.SetFlags(0)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
 		<-ctx.Done()
-		stop() // A second interrupt uses the default handler.
+		stop() // A second interrupt or SIGTERM uses the default handler.
 	}()
 	if err := runCLI(ctx, os.Args[1:]); err != nil {
-		log.Fatalln(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(exitStatus(err))
 	}
 }
 
+func exitStatus(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, errOutputAfterCommit) {
+		return exitOutputAfterCommit
+	}
+	var parseErr *kong.ParseError
+	if errors.As(err, &parseErr) {
+		return exitUsage
+	}
+	return exitFailure
+}
+
 type opts struct {
+	Version              versionFlag   `name:"version" help:"Show version and exit."`
 	Database             string        `arg:"" required:"" help:"ID or fully qualified resource name of the database."`
 	Sql                  string        `name:"sql" xor:"sql" required:"" help:"SQL query text; exclusive with --sql-file."`
 	SqlFile              string        `name:"sql-file" xor:"sql" required:"" help:"File name contains SQL query; exclusive with --sql"`
@@ -63,7 +88,7 @@ type opts struct {
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format of the primary document."`
 	CSVFormat            string        `name:"csv-format" help:"CSV value formatting: simple (default) or spanner-cli. Requires --format=experimental_csv."`
 	NoCSVHeader          bool          `name:"no-csv-header" help:"Omit the CSV header. Requires --format=experimental_csv."`
-	Output               string        `name:"output" short:"o" default:"-" help:"Destination of the primary document. Use - for stdout; /dev/stdout and /dev/stderr are mapped in-process."`
+	Output               string        `name:"output" short:"o" default:"-" help:"Destination of the primary document. Use - for stdout; /dev/stdout, /dev/stderr, and /dev/null are mapped in-process."`
 	PlanOutput           string        `name:"plan-output" help:"Write the query-plan artifact here and strip stats.queryPlan from the primary document. Enables split mode."`
 	PlanFormat           string        `name:"plan-format" help:"Format of the plan artifact: json, yaml, text, dot, mermaid, d2, svg, or png. Defaults to --format when that is json or yaml, otherwise json. Requires --plan-output."`
 	PlanTextStyle        string        `name:"plan-text-style" help:"Text plan style: current, traditional, or compact. Defaults to current. Requires --plan-format=text." group:"Plan rendering"`
@@ -142,12 +167,32 @@ func (o opts) mergedParams() (map[string]string, error) {
 	return params.MergeParams(fileParams, cliParams), nil
 }
 
-var errHelpRequested = errors.New("help requested")
+var (
+	errHelpRequested    = errors.New("help requested")
+	errVersionRequested = errors.New("version requested")
+)
+
+// versionFlag prints the build version and stops parsing, like --help.
+type versionFlag bool
+
+func (v versionFlag) Decode(ctx *kong.DecodeContext) error { return nil }
+func (v versionFlag) IsBool() bool                         { return true }
+func (v versionFlag) BeforeApply(app *kong.Kong, vars kong.Vars) error {
+	ver := vars["version"]
+	if ver == "" {
+		ver = "dev"
+	}
+	if _, err := fmt.Fprintln(app.Stdout, ver); err != nil {
+		return err
+	}
+	return errVersionRequested
+}
 
 func processFlags(args []string) (o opts, err error) {
 	parser, err := kong.New(&o,
 		kong.Name("execspansql"),
 		kong.Description("Yet another gcloud spanner databases execute-sql replacement"),
+		kong.Vars{"version": version},
 		kong.Help(func(options kong.HelpOptions, ctx *kong.Context) error {
 			if err := kong.DefaultHelpPrinter(options, ctx); err != nil {
 				return err
@@ -161,21 +206,11 @@ func processFlags(args []string) (o opts, err error) {
 	if err != nil {
 		return o, err
 	}
-	ctx, err := parser.Parse(args)
-	if errors.Is(err, errHelpRequested) {
+	_, err = parser.Parse(args)
+	if errors.Is(err, errHelpRequested) || errors.Is(err, errVersionRequested) {
 		return o, err
 	}
 	if err != nil {
-		var parseErr *kong.ParseError
-		if errors.As(err, &parseErr) {
-			ctx = parseErr.Context
-		}
-		if ctx != nil {
-			prev := parser.Stdout
-			parser.Stdout = os.Stderr
-			_ = ctx.PrintUsage(false)
-			parser.Stdout = prev
-		}
 		return o, err
 	}
 	return o, nil
@@ -204,40 +239,10 @@ func parseTimestampBound(rawReadTimestamp string) (spanner.TimestampBound, error
 	return spanner.ReadTimestamp(parsed), nil
 }
 
-func stripLeadingComments(query string) string {
-	for {
-		query = strings.TrimLeft(query, " \t\r\n")
-		if query == "" {
-			return ""
-		}
-
-		switch {
-		case strings.HasPrefix(query, "--"):
-			if i := strings.IndexAny(query[2:], "\r\n"); i >= 0 {
-				query = query[2+i+1:]
-				continue
-			}
-			return ""
-		case strings.HasPrefix(query, "#"):
-			if i := strings.IndexAny(query[1:], "\r\n"); i >= 0 {
-				query = query[1+i+1:]
-				continue
-			}
-			return ""
-		case strings.HasPrefix(query, "/*"):
-			if i := strings.Index(query[2:], "*/"); i >= 0 {
-				query = query[i+4:]
-				continue
-			}
-			return ""
-		default:
-			return query
-		}
-	}
-}
-
 func isReadWriteStatement(query string) bool {
-	return stmtkind.IsDMLLexical(stripLeadingComments(query))
+	// stmtkind.IsDMLLexical uses the memefish lexer, which already skips
+	// leading line/block comments and hints before classifying DML.
+	return stmtkind.IsDMLLexical(query)
 }
 
 func queryModeForQuery(query string, enablePartitionedDML bool, tb spanner.TimestampBound) queryMode {
@@ -405,7 +410,7 @@ func spaniterStatsOpts(mode queryMode, opts spanner.QueryOptions) []spaniter.Opt
 // dial options that bypass application-default credentials).
 func runCLI(ctx context.Context, args []string, clientOptions ...option.ClientOption) (err error) {
 	o, err := processFlags(args)
-	if errors.Is(err, errHelpRequested) {
+	if errors.Is(err, errHelpRequested) || errors.Is(err, errVersionRequested) {
 		return nil
 	}
 	if err != nil {
@@ -422,6 +427,7 @@ func runCLI(ctx context.Context, args []string, clientOptions ...option.ClientOp
 		return err
 	}
 	defer sinks.Abort()
+	afterOutputSinksOpen(sinks)
 
 	authOpts, err := maybeAuthPreflight(ctx, o, clientOptions, newReauthHooks())
 	if err != nil {

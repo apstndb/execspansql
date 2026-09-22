@@ -32,6 +32,7 @@ Arguments:
 
 Flags:
   -h, --help                       Show context-sensitive help.
+      --version                    Show version and exit.
       --sql=STRING                 SQL query text; exclusive with --sql-file.
       --sql-file=STRING            File name contains SQL query; exclusive with
                                    --sql
@@ -48,9 +49,9 @@ Flags:
                                    spanner-cli. Requires --format=experimental_csv.
       --no-csv-header              Omit the CSV header. Requires
                                    --format=experimental_csv.
-  -o, --output="-"                 Destination of the primary document. Use -
-                                   for stdout; /dev/stdout and /dev/stderr are
-                                   mapped in-process.
+  -o, --output="-"                 Destination of the primary document.
+                                   Use - for stdout; /dev/stdout, /dev/stderr,
+                                   and /dev/null are mapped in-process.
       --plan-output=STRING         Write the query-plan artifact here and strip
                                    stats.queryPlan from the primary document.
                                    Enables split mode.
@@ -118,6 +119,13 @@ Timestamp Bound
                              (micro-seconds precision)
 ```
 
+## Exit status
+
+- `0` success (`--help` and `--version` included)
+- `1` command preparation or runtime failure (invalid option combinations, invalid read timestamps, query, auth, output, and other execution errors)
+- `2` argument parsing or parser validation failure (unknown flags, invalid enum values, missing required arguments, or an invalid database resource name)
+- `3` output failed after a statement was committed (not a rollback; SQL is not replayed)
+
 Local build requires Go 1.25.
 
 ```
@@ -179,7 +187,8 @@ Path conventions for both `--output` and `--plan-output`:
 
 - `-` means stdout.
 - `/dev/stdout` and `/dev/stderr` are recognized literally and mapped to stdout/stderr in-process (so they work on Windows and take part in collision checks). `--plan-output=/dev/stderr` is the supported spelling for "plan on the terminal while rows go down the pipe".
-- Any other value is a regular file. Files are written to a sibling temp file (mode `0600`) and renamed into place after the query (and transaction) succeeds, so a failing query leaves an existing target intact. Overwriting an existing target is allowed. Two files plus stdout are not a transaction: if publishing the second file fails, the command reports which outputs completed and exits non-zero. SQL is never replayed because an output failed.
+- `/dev/null` is recognized literally and discards bytes in-process. Two `/dev/null` destinations are allowed.
+- Any other value must be a regular file (directories and devices are rejected before the query). Files are written to a sibling temp file in the resolved directory (mode `0600`) and renamed into place after the query (and transaction) succeeds, so a failing query leaves an existing target intact. The published file keeps mode `0600` even when replacing a more permissive target, because result rows may be sensitive. Overwriting an existing target is allowed. If the destination itself is a symlink to an existing regular file, publication replaces the resolved target and preserves the symlink. Two files plus stdout are not a transaction: if publishing the second file fails, the command reports which outputs completed and exits non-zero. SQL is never replayed because an output failed. Symlinked parent directories are resolved before collision checks, so `--output=real/new.json --plan-output=alias/new.json` is rejected when `alias` points at `real`.
 
 In split mode the two destinations must differ. Both on stdout (any spelling) is rejected. `--plan-output` requires `--query-mode=PLAN`, `PROFILE`, or `WITH_PLAN_AND_STATS` (never upgraded from `NORMAL` or `WITH_STATS`). It is incompatible with `--try-partition-query` and `--enable-partitioned-dml`.
 

@@ -180,25 +180,25 @@ func renderGraph(ctx context.Context, w io.Writer, format Format, rowType *sppb.
 		return fmt.Errorf("build plan graph: %w", err)
 	}
 
-	switch format {
-	case FormatDOT:
+	switch {
+	case format == FormatDOT:
 		return dot.NewRenderer(dot.Options{
 			ShowQuery:      opts.ShowQuery,
 			ShowQueryStats: opts.ShowQueryStats,
 		}).Render(ctx, w, plan)
-	case FormatMermaid:
+	case format == FormatMermaid:
 		return mermaid.NewRenderer(mermaid.Options{
 			BuildOptions:   buildOpts,
 			ShowQuery:      opts.ShowQuery,
 			ShowQueryStats: opts.ShowQueryStats,
 		}).Render(ctx, w, plan)
-	case FormatD2:
+	case format == FormatD2:
 		return d2.NewRenderer(d2.Options{
 			BuildOptions:   buildOpts,
 			ShowQuery:      opts.ShowQuery,
 			ShowQueryStats: opts.ShowQueryStats,
 		}).Render(ctx, w, plan)
-	case FormatSVG, FormatPNG:
+	case format.NeedsGraphviz():
 		gvFormat := graphviz.SVG
 		if format == FormatPNG {
 			gvFormat = graphviz.PNG

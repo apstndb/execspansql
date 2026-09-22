@@ -97,6 +97,7 @@ func TestIsReadWriteStatement(t *testing.T) {
 		{name: "commented_update", query: "/* comment */ UPDATE T SET X=1", wantDML: true},
 		{name: "line_comment_update", query: "-- comment\nUPDATE T SET X=1", wantDML: true},
 		{name: "hash_comment_update", query: "# comment\nINSERT T(a) VALUES(1)", wantDML: true},
+		{name: "hint_then_insert", query: "@{priority=HIGH} INSERT T(a) VALUES(1)", wantDML: true},
 		{name: "plain_select", query: "SELECT 1", wantDML: false},
 		{name: "commented_select", query: "-- comment\nSELECT 1", wantDML: false},
 	}

@@ -114,7 +114,7 @@ func TestLazyRedactRowsViews(t *testing.T) {
 	l.rows.redact = true
 	defer l.Stop()
 
-	code, err := Compile("{n: (.rows|length), rows: [.rows[]]}", InputLazy)
+	code, err := Compile("{n: (.rows|length), rows: [.rows[]]}")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func runLazyFilter(t *testing.T, filter string) any {
 	t.Helper()
 	l := newSyntheticLazy(t, 3)
 	defer l.Stop()
-	code, err := Compile(filter, InputLazy)
+	code, err := Compile(filter)
 	if err != nil {
 		t.Fatal(err)
 	}

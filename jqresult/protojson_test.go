@@ -47,15 +47,6 @@ func TestMetadataMapFromMetadataNil(t *testing.T) {
 	}
 }
 
-func TestResultSetMapFromRowIteratorNil(t *testing.T) {
-	t.Parallel()
-
-	_, err := ResultSetMapFromRowIterator(nil, false)
-	if err == nil {
-		t.Fatal("error = nil, want nil row iterator error")
-	}
-}
-
 // Both eager result materialization and lazy stats conversion must preserve
 // arbitrary plan/stat contents, independently of RPC query mode support.
 func TestPlanAndStatsAcrossResultPaths(t *testing.T) {
