@@ -30,7 +30,6 @@ import (
 	"github.com/apstndb/gsqlutils/stmtkind"
 	"github.com/apstndb/spaniter"
 	"github.com/apstndb/spannerotel/interceptor"
-	svwriter "github.com/apstndb/spanvalue/writer"
 )
 
 const (
@@ -62,6 +61,7 @@ type opts struct {
 	QueryMode            string        `name:"query-mode" enum:"NORMAL,PLAN,PROFILE,WITH_PLAN_AND_STATS,WITH_STATS" default:"NORMAL" help:"Query mode: NORMAL, PLAN, PROFILE, WITH_PLAN_AND_STATS, or WITH_STATS."`
 	Priority             string        `name:"priority" enum:"high,low,medium,unspecified" default:"unspecified" help:"Priority for the execute SQL request."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format of the primary document."`
+	CSVFormat            string        `name:"csv-format" help:"CSV value formatting: simple (default) or spanner-cli. Requires --format=experimental_csv."`
 	Output               string        `name:"output" short:"o" default:"-" help:"Destination of the primary document. Use - for stdout; /dev/stdout and /dev/stderr are mapped in-process."`
 	PlanOutput           string        `name:"plan-output" help:"Write the query-plan artifact here and strip stats.queryPlan from the primary document. Enables split mode."`
 	PlanFormat           string        `name:"plan-format" help:"Format of the plan artifact: json, yaml, text, dot, mermaid, d2, svg, or png. Defaults to --format when that is json or yaml, otherwise json. Requires --plan-output."`
@@ -493,57 +493,6 @@ func runCLI(ctx context.Context, args []string, clientOptions ...option.ClientOp
 // rows, so reading them into memory would only cost time and memory.
 func materializeWithoutRows(o opts) bool {
 	return o.RedactRows || o.DiscardResults
-}
-
-// csvRedactRowIteratorWriter implements [svwriter.RowIteratorWriter] for --redact-rows CSV:
-// it registers schema and flushes the header via the embedded [svwriter.DelimitedWriter] but
-// discards row bodies in WriteRow while WriteRowIterator drains the iterator.
-type csvRedactRowIteratorWriter struct {
-	*svwriter.DelimitedWriter
-}
-
-func (csvRedactRowIteratorWriter) WriteRow(*spanner.Row) error { return nil }
-
-// writeCsvFromRowIter streams query rows to CSV without materializing a ResultSet.
-// WriteRowIterator stops the iterator; queryResult also closes it on early failures.
-func writeCsvFromRowIter(writer io.Writer, rowIter *spanner.RowIterator, redactRows bool) (*svwriter.RowIteratorResult, error) {
-	csvWriter, err := svwriter.NewCSVWriter(writer)
-	if err != nil {
-		return nil, err
-	}
-	iterWriter := svwriter.RowIteratorWriter(csvWriter)
-	if redactRows {
-		iterWriter = csvRedactRowIteratorWriter{csvWriter}
-	}
-	return svwriter.WriteRowIterator(rowIter, iterWriter)
-}
-
-func prepareCsvRowType(csvWriter *svwriter.DelimitedWriter, metadata *sppb.ResultSetMetadata) error {
-	if metadata == nil || metadata.GetRowType() == nil {
-		return errors.New("result set metadata is missing or invalid")
-	}
-	return csvWriter.PrepareRowType(metadata.GetRowType())
-}
-
-// writeCsvFromResultSet writes completed DML results without a live iterator.
-func writeCsvFromResultSet(writer io.Writer, rs *sppb.ResultSet) error {
-	if rs == nil || rs.GetMetadata() == nil || rs.GetMetadata().GetRowType() == nil {
-		return errors.New("result set metadata is missing or invalid")
-	}
-
-	csvWriter, err := svwriter.NewCSVWriter(writer, svwriter.WithMetadata(rs.GetMetadata()))
-	if err != nil {
-		return err
-	}
-	for _, row := range rs.GetRows() {
-		if row == nil {
-			return fmt.Errorf("nil row in result set")
-		}
-		if err := csvWriter.WriteStructValues(row.GetValues()); err != nil {
-			return err
-		}
-	}
-	return csvWriter.Flush()
 }
 
 func newClient(ctx context.Context, project, instance, database, databaseRole string, logGrpcMode string, doTrace bool, clientOptions ...option.ClientOption) (*spanner.Client, error) {

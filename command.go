@@ -22,6 +22,9 @@ type preparedCommand struct {
 }
 
 func prepareCommand(o opts) (*preparedCommand, error) {
+	if err := validateCSVOutputOptions(o); err != nil {
+		return nil, err
+	}
 	jqMode, err := jqresult.ParseInputMode(o.JqInputMode)
 	if err != nil {
 		return nil, err
