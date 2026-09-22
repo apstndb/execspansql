@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"cloud.google.com/go/spanner"
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
-	"github.com/apstndb/execspansql/resultset"
 	"github.com/apstndb/spaniter"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -50,13 +48,4 @@ func StatsMapFromResult(result spaniter.RowIteratorResult) (map[string]any, erro
 // ResultSetMap materializes a full ResultSet as a jq input map (eager mode).
 func ResultSetMap(rs *sppb.ResultSet) (map[string]any, error) {
 	return ProtoToMap(rs)
-}
-
-// ResultSetMapFromRowIterator materializes rowIter and returns the jq input map.
-func ResultSetMapFromRowIterator(rowIter *spanner.RowIterator, redact bool, opts ...spaniter.Option) (map[string]any, error) {
-	rs, err := resultset.Materialize(rowIter, redact, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return ResultSetMap(rs)
 }

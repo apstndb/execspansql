@@ -24,6 +24,7 @@ func TestResolveDestinationStdoutSpellings(t *testing.T) {
 		{raw: "-", kind: destKindStdout},
 		{raw: "/dev/stdout", kind: destKindStdout},
 		{raw: "/dev/stderr", kind: destKindStderr},
+		{raw: "/dev/null", kind: destKindDiscard},
 		{raw: "plan.json", kind: destKindFile},
 	}
 	for _, tt := range tests {
@@ -95,6 +96,14 @@ func TestValidateDestinationsStdoutCollision(t *testing.T) {
 			name: "discard_allows_plan_on_stdout",
 			o:    opts{Output: "-", PlanOutput: "-", DiscardResults: true},
 		},
+		{
+			name: "both_dev_null_ok",
+			o:    opts{Output: "/dev/null", PlanOutput: "/dev/null"},
+		},
+		{
+			name: "stdout_and_dev_null_ok",
+			o:    opts{Output: "-", PlanOutput: "/dev/null"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,6 +167,74 @@ func TestValidateDestinationsSymlinkAndHardLink(t *testing.T) {
 	err = validateDestinations(opts{Output: target, PlanOutput: hard})
 	if err == nil || !strings.Contains(err.Error(), "same file") {
 		t.Fatalf("hard link: error = %v, want same file", err)
+	}
+}
+
+func TestValidateDestinationsSymlinkedParentNewFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(realDir, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	err := validateDestinations(opts{
+		Output:     filepath.Join(realDir, "new.json"),
+		PlanOutput: filepath.Join(alias, "new.json"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "same file") {
+		t.Fatalf("aliased parent new file: error = %v, want same file", err)
+	}
+
+	err = validateDestinations(opts{
+		Output:     filepath.Join(realDir, "a.json"),
+		PlanOutput: filepath.Join(alias, "b.json"),
+	})
+	if err != nil {
+		t.Fatalf("distinct files under aliased parent: %v", err)
+	}
+
+	err = validateDestinations(opts{
+		Output:     filepath.Join(realDir, "missing", "out.json"),
+		PlanOutput: filepath.Join(alias, "missing", "out.json"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "same file") {
+		t.Fatalf("missing nested parent: error = %v, want same file", err)
+	}
+}
+
+func TestValidateDestinationsRejectsNonRegular(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	outdir := filepath.Join(dir, "outdir")
+	if err := os.Mkdir(outdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := validateDestinations(opts{Output: outdir})
+	if err == nil || !strings.Contains(err.Error(), "--output") || !strings.Contains(err.Error(), "directory") {
+		t.Fatalf("directory: error = %v, want --output directory", err)
+	}
+
+	_, err = newOutputSinks(opts{Output: outdir})
+	if err == nil || !strings.Contains(err.Error(), "directory") {
+		t.Fatalf("newOutputSinks directory: error = %v", err)
+	}
+	if leftover := listExecspansqlTemps(t, dir); len(leftover) != 0 {
+		t.Fatalf("directory target created temps: %v", leftover)
+	}
+
+	if _, err := os.Stat("/dev/zero"); err != nil {
+		t.Skip("/dev/zero not available")
+	}
+	err = validateDestinations(opts{Output: "/dev/zero"})
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("/dev/zero: error = %v, want not a regular file", err)
 	}
 }
 
@@ -367,6 +444,13 @@ func TestOutputSinksPublishAndAbort(t *testing.T) {
 		if string(got) != "new-primary" {
 			t.Fatalf("after publish: %q, want new-primary", got)
 		}
+		info, err := os.Stat(primary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("published mode = %o, want 0600", perm)
+		}
 	})
 
 	t.Run("plan_error_publishes_primary", func(t *testing.T) {
@@ -401,6 +485,115 @@ func TestOutputSinksPublishAndAbort(t *testing.T) {
 			t.Fatalf("plan = %q, want old-plan", gotPlan)
 		}
 	})
+}
+
+func TestRunCLICancelledContextRemovesTemp(t *testing.T) {
+	startQueryStatsModeServer(t, &queryStatsModeServer{})
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.json")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := runCLI(ctx, []string{"db", "--project", "p", "--instance", "i", "--sql", "SELECT 1", "-o", out, "--timeout", "5s"})
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+	if leftover := listExecspansqlTemps(t, dir); len(leftover) != 0 {
+		t.Fatalf("temps left after cancel: %v", leftover)
+	}
+	if _, statErr := os.Stat(out); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("target exists after cancel: %v", statErr)
+	}
+}
+
+func TestOutputSinksAbortRemovesTemp(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "out.json")
+	s, err := newOutputSinks(opts{Output: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if temps := listExecspansqlTemps(t, dir); len(temps) != 1 {
+		t.Fatalf("temps after open = %v, want 1", temps)
+	}
+	s.Abort()
+	if leftover := listExecspansqlTemps(t, dir); len(leftover) != 0 {
+		t.Fatalf("after abort: %v", leftover)
+	}
+	if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("target exists after abort: %v", err)
+	}
+}
+
+func TestOutputSinksDevNullDoesNotCreateFile(t *testing.T) {
+	t.Parallel()
+
+	s, err := newOutputSinks(opts{Output: "/dev/null"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.primary.Write([]byte("discarded")); err != nil {
+		t.Fatal(err)
+	}
+	s.MarkPrimaryComplete()
+	if err := s.Finish(nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOutputSinksPublishThroughSymlinkedParent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(realDir, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := newOutputSinks(opts{Output: filepath.Join(alias, "out.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if temps := listExecspansqlTemps(t, realDir); len(temps) != 1 {
+		t.Fatalf("temps in resolved dir = %v, want 1", temps)
+	}
+	if temps := listExecspansqlTemps(t, alias); len(temps) != 1 {
+		t.Fatalf("temps visible through alias = %v, want 1", temps)
+	}
+	if _, err := s.primary.Write([]byte("DATA")); err != nil {
+		t.Fatal(err)
+	}
+	s.MarkPrimaryComplete()
+	if err := s.Finish(nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(realDir, "out.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "DATA" {
+		t.Fatalf("published = %q, want DATA", got)
+	}
+}
+
+func listExecspansqlTemps(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".execspansql-") && strings.HasSuffix(e.Name(), ".tmp") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }
 
 func TestDiscardResultsProducesNoPrimaryBytes(t *testing.T) {

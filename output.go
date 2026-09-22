@@ -22,6 +22,7 @@ const (
 	destStdoutDash = "-"
 	destDevStdout  = "/dev/stdout"
 	destDevStderr  = "/dev/stderr"
+	destDevNull    = "/dev/null"
 
 	planModesHelp  = "PLAN, PROFILE, or WITH_PLAN_AND_STATS"
 	planFormatHelp = "json, yaml, text, dot, mermaid, d2, svg, or png"
@@ -48,6 +49,7 @@ const (
 	destKindStdout destKind = iota
 	destKindStderr
 	destKindFile
+	destKindDiscard
 )
 
 type resolvedDest struct {
@@ -69,6 +71,10 @@ func resolveDestination(raw string) resolvedDest {
 		return resolvedDest{kind: destKindStdout, raw: raw}
 	case destDevStderr:
 		return resolvedDest{kind: destKindStderr, raw: raw}
+	case destDevNull:
+		// Literal like /dev/stdout: mapped in-process so it works on Windows
+		// and is not rejected as a character device.
+		return resolvedDest{kind: destKindDiscard, raw: raw}
 	default:
 		abs, err := filepath.Abs(filepath.Clean(raw))
 		if err != nil {
@@ -84,6 +90,8 @@ func destLabel(d resolvedDest) string {
 		return "stdout"
 	case destKindStderr:
 		return "stderr"
+	case destKindDiscard:
+		return destDevNull
 	default:
 		if d.abs != "" {
 			return d.abs
@@ -315,51 +323,119 @@ func validateDestinations(o opts) error {
 		if err := checkAlias("--output", primaryRaw, primary); err != nil {
 			return err
 		}
+		if err := validateFileDestination("--output", primaryRaw, primary); err != nil {
+			return err
+		}
 	}
 	if plan != nil {
 		if err := checkAlias("--plan-output", o.PlanOutput, *plan); err != nil {
+			return err
+		}
+		if err := validateFileDestination("--plan-output", o.PlanOutput, *plan); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func fileIdentity(path string) (abs string, info os.FileInfo, exists bool, err error) {
-	abs, err = filepath.Abs(filepath.Clean(path))
+func validateFileDestination(flagName, destRaw string, d resolvedDest) error {
+	if d.kind != destKindFile {
+		return nil
+	}
+	path := destRaw
+	if d.abs != "" {
+		path = d.abs
+	}
+	info, err := os.Stat(path)
 	if err != nil {
-		return "", nil, false, err
-	}
-	info, statErr := os.Stat(path)
-	if statErr != nil {
-		if errors.Is(statErr, os.ErrNotExist) {
-			return abs, nil, false, nil
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
-		return abs, nil, false, statErr
+		return fmt.Errorf("%s: %w", flagName, err)
 	}
-	if eval, evalErr := filepath.EvalSymlinks(path); evalErr == nil {
-		if evalAbs, absErr := filepath.Abs(eval); absErr == nil {
-			abs = evalAbs
+	if info.IsDir() {
+		return fmt.Errorf("%s: %s is a directory", flagName, destRaw)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s: %s is not a regular file", flagName, destRaw)
+	}
+	return nil
+}
+
+// canonicalOutputPath resolves path for collision checks and temp-file
+// placement. Existing targets are EvalSymlinks'd. Missing targets walk up to
+// the deepest existing ancestor, resolve that, then rejoin the missing leaf so
+// --output=real/new.json and --plan-output=alias/new.json collide when alias
+// points at real even if new.json does not exist yet.
+func canonicalOutputPath(path string) (string, error) {
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	existing, leaf, err := deepestExistingAncestor(abs)
+	if err != nil {
+		return "", err
+	}
+	resolved := existing
+	if eval, evalErr := filepath.EvalSymlinks(existing); evalErr == nil {
+		resolved = eval
+	}
+	if resolvedAbs, absErr := filepath.Abs(resolved); absErr == nil {
+		resolved = resolvedAbs
+	}
+	if leaf == "" {
+		return resolved, nil
+	}
+	return filepath.Join(resolved, leaf), nil
+}
+
+func deepestExistingAncestor(abs string) (existing, leaf string, err error) {
+	var missing []string
+	cur := abs
+	for {
+		_, statErr := os.Lstat(cur)
+		if statErr == nil {
+			return cur, filepath.Join(missing...), nil
 		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return "", "", statErr
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return abs, "", nil
+		}
+		missing = append([]string{filepath.Base(cur)}, missing...)
+		cur = parent
 	}
-	return abs, info, true, nil
 }
 
 func sameOutputFile(a, b string) (bool, error) {
-	absA, infoA, existsA, err := fileIdentity(a)
+	canonA, err := canonicalOutputPath(a)
 	if err != nil {
 		return false, err
 	}
-	absB, infoB, existsB, err := fileIdentity(b)
+	canonB, err := canonicalOutputPath(b)
 	if err != nil {
 		return false, err
 	}
-	if absA == absB {
+	if canonA == canonB {
 		return true, nil
 	}
-	if existsA && existsB {
-		return os.SameFile(infoA, infoB), nil
+	infoA, errA := os.Stat(a)
+	if errA != nil {
+		if !errors.Is(errA, os.ErrNotExist) {
+			return false, errA
+		}
+		return false, nil
 	}
-	return false, nil
+	infoB, errB := os.Stat(b)
+	if errB != nil {
+		if !errors.Is(errB, os.ErrNotExist) {
+			return false, errB
+		}
+		return false, nil
+	}
+	return os.SameFile(infoA, infoB), nil
 }
 
 // fileSink is a regular-file destination written via a sibling temp file.
@@ -383,6 +459,11 @@ type outputSinks struct {
 	primaryReady bool
 	done         bool
 }
+
+// afterOutputSinksOpen is invoked after destinations are reserved and before
+// authentication. Tests replace it to simulate a publication race; production
+// keeps the no-op.
+var afterOutputSinksOpen = func(*outputSinks) {}
 
 func newOutputSinks(o opts) (*outputSinks, error) {
 	if err := validateDestinations(o); err != nil {
@@ -422,19 +503,23 @@ func openDestination(d resolvedDest) (io.Writer, *fileSink, error) {
 		return os.Stdout, nil, nil
 	case destKindStderr:
 		return os.Stderr, nil, nil
+	case destKindDiscard:
+		return io.Discard, nil, nil
 	case destKindFile:
-		dir := filepath.Dir(d.abs)
+		canonical, err := canonicalOutputPath(d.raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		// CreateTemp already uses 0600. The published file keeps that mode
+		// even when replacing a more permissive target: result rows may be
+		// sensitive. Place the temp beside the resolved path so a symlinked
+		// parent does not write into a different directory than Finish.
+		dir := filepath.Dir(canonical)
 		tmp, err := os.CreateTemp(dir, ".execspansql-*.tmp")
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := tmp.Chmod(0o600); err != nil {
-			name := tmp.Name()
-			_ = tmp.Close()
-			_ = os.Remove(name)
-			return nil, nil, err
-		}
-		return tmp, &fileSink{file: tmp, final: d.abs}, nil
+		return tmp, &fileSink{file: tmp, final: canonical}, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown destination kind")
 	}
@@ -527,11 +612,13 @@ func (s *outputSinks) Finish(workErr error) error {
 	return nil
 }
 
+var errOutputAfterCommit = errors.New("output failed after the statement was committed; this is not a rollback and the SQL is not replayed")
+
 func wrapCommittedOutputError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("output failed after the statement was committed; this is not a rollback and the SQL is not replayed: %w", err)
+	return fmt.Errorf("%w: %w", errOutputAfterCommit, err)
 }
 
 func hasUsableQueryPlan(stats *sppb.ResultSetStats) bool {

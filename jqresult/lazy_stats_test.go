@@ -65,7 +65,7 @@ func TestLazyOmitQueryPlanLeavesQueryStats(t *testing.T) {
 	}
 	defer l.Stop()
 
-	code, err := Compile(".stats", InputLazy)
+	code, err := Compile(".stats")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestLazyStatsInterleavedFilterIDs(t *testing.T) {
 
 	l := newSyntheticLazy(t, 3)
 	defer l.Stop()
-	code, err := Compile(`. as $root | [.rows[] | {row: ., stats: $root.stats}]`, InputLazy)
+	code, err := Compile(`. as $root | [.rows[] | {row: ., stats: $root.stats}]`)
 	if err != nil {
 		t.Fatal(err)
 	}
