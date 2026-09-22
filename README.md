@@ -69,8 +69,11 @@ Flags:
       --jq-input-mode="eager"      How query rows are passed to jq (json/yaml
                                    only): eager (full ResultSet), lazy (JQValue
                                    root).
-      --param=PARAM,...            [name]=[type or literal]; legacy [name]:[...]
-                                   also accepted
+      --param=PARAM                One [name]=[type or literal] assignment.
+                                   Repeat the flag for more parameters. Legacy
+                                   [name]:[...] is accepted. Commas stay inside
+                                   the value; one flag is not split into several
+                                   assignments.
       --param-file=STRING          YAML or JSON file of query parameters (name
                                    to type/literal string)
       --log-grpc                   gRPC logging: --log-grpc means payload;
@@ -256,7 +259,7 @@ $ execspansql ${DATABASE_ID} --query-mode=PROFILE --discard-results \
 Many Cloud Spanner clients don't support parameter.
 Without modifications, query which have parameters are impossible to execute and query whose parameters' types are `STRUCT` or `ARRAY` are impossible to show query plans.
 
-execspansql supports query parameters via repeated `--param name=value` flags (legacy `name:value` is also accepted) or a `--param-file` (YAML or JSON). When both are given, `--param` overrides entries from the file.
+execspansql supports query parameters via repeated `--param name=value` flags (legacy `name:value` is also accepted) or a `--param-file` (YAML or JSON). Each `--param` is one assignment: a comma inside an ARRAY, STRUCT, or string literal is kept. The former shorthand `--param=n=1,m=2` is not split into two parameters; pass `--param=n=1 --param=m=2` instead. When both a file and flags are given, `--param` overrides entries from the file.
 
 #### PLAN with complex typed parameters
 

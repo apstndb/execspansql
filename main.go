@@ -104,7 +104,7 @@ type opts struct {
 	JqRawOutput          bool          `name:"raw-output" short:"r" help:"(--raw-output of jq)"`
 	JqFromFile           string        `name:"filter-file" xor:"filter" help:"(--from-file of jq)"`
 	JqInputMode          string        `name:"jq-input-mode" enum:"eager,lazy" default:"eager" help:"How query rows are passed to jq (json/yaml only): eager (full ResultSet), lazy (JQValue root)."`
-	ParamFlags           []string      `name:"param" help:"[name]=[type or literal]; legacy [name]:[...] also accepted"`
+	ParamFlags           []string      `name:"param" sep:"none" help:"One [name]=[type or literal] assignment. Repeat the flag for more parameters. Legacy [name]:[...] is accepted. Commas stay inside the value; one flag is not split into several assignments."`
 	ParamFile            string        `name:"param-file" help:"YAML or JSON file of query parameters (name to type/literal string)"`
 	LogGrpc              logGrpcFlag   `name:"log-grpc" enum:"off,metadata,payload" default:"off" help:"gRPC logging: --log-grpc means payload; use --log-grpc=off|metadata|payload to select a mode (payload may include request and response payloads)"`
 	TraceProject         string        `name:"experimental-trace-project" xor:"trace" help:"Export traces to Cloud Trace in the given project."`
