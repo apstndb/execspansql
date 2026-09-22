@@ -17,14 +17,14 @@ func validateCSVOutputOptions(o opts) error {
 	default:
 		return fmt.Errorf("invalid --csv-format %q: must be simple or spanner-cli", o.CSVFormat)
 	}
-	if o.CSVFormat == "" {
+	if o.CSVFormat == "" && !o.NoCSVHeader {
 		return nil
 	}
 	if o.Format != "experimental_csv" {
-		return errors.New("--csv-format requires --format=experimental_csv")
+		return errors.New("--csv-format and --no-csv-header require --format=experimental_csv")
 	}
 	if o.TryPartitionQuery || o.DiscardResults {
-		return errors.New("--csv-format requires primary CSV output; cannot be combined with --try-partition-query or --discard-results")
+		return errors.New("--csv-format and --no-csv-header require primary CSV output; cannot be combined with --try-partition-query or --discard-results")
 	}
 	return nil
 }
@@ -37,6 +37,7 @@ func csvWriterOptions(o opts) []svwriter.DelimitedOption {
 		formatter = spanvalue.SpannerCLICompatibleFormatConfig()
 	}
 	return []svwriter.DelimitedOption{
+		svwriter.WithHeader(!o.NoCSVHeader),
 		svwriter.WithFormatter(formatter),
 	}
 }
