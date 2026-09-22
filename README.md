@@ -118,8 +118,8 @@ Timestamp Bound
 ## Exit status
 
 - `0` success (`--help` and `--version` included)
-- `1` runtime failure (query, auth, output, and other execution errors)
-- `2` usage or flag parse error
+- `1` command preparation or runtime failure (invalid option combinations, invalid read timestamps, query, auth, output, and other execution errors)
+- `2` argument parsing or parser validation failure (unknown flags, invalid enum values, missing required arguments, or an invalid database resource name)
 - `3` output failed after a statement was committed (not a rollback; SQL is not replayed)
 
 Local build requires Go 1.25.
