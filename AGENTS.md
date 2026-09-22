@@ -8,7 +8,7 @@ Primary package layout:
 - `main.go` / `trace.go` - CLI entrypoint, process lifecycle, client and tracing wiring.
 - `command.go` - validated options, resolved SQL/parameters, and compiled jq.
 - `execution.go` - transaction selection and owned query results; DML results become available only after commit.
-- `csv.go` - shared CSV value options and streaming/buffered writers.
+- `csv.go` - shared CSV value/header options and streaming/buffered writers.
 - `format.go` / `output.go` - result formatting and destination publication; output errors never replay SQL.
 - `params/` - parameter file parsing and typed conversion helpers.
 - `resultset/` - Spanner result set materialization and formatting helpers.

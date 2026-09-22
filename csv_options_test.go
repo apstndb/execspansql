@@ -57,8 +57,12 @@ func TestCSVOptionsThroughCLI(t *testing.T) {
 				{name: "default", want: header + simple},
 				{name: "simple", args: []string{"--csv-format=simple"}, want: header + simple},
 				{name: "spanner-cli", args: []string{"--csv-format=spanner-cli"}, want: header + compatible},
+				{name: "no-header", args: []string{"--no-csv-header"}, want: simple},
+				{name: "combined", args: []string{"--no-csv-header", "--csv-format=spanner-cli"}, want: compatible},
 				{name: "zero-rows", omitRows: true, want: header},
+				{name: "zero-rows-no-header", args: []string{"--no-csv-header"}, omitRows: true},
 				{name: "redacted", args: []string{"--redact-rows"}, want: header},
+				{name: "redacted-no-header", args: []string{"--redact-rows", "--no-csv-header"}},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					server := &csvOptionsServer{omitRows: tc.omitRows}
@@ -95,10 +99,11 @@ func TestCSVOptionsRejectBeforeOutputOrClient(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"json-simple", []string{"--csv-format=simple"}, "requires --format=experimental_csv"},
-		{"yaml-format", []string{"--format=yaml", "--csv-format=spanner-cli"}, "requires --format=experimental_csv"},
-		{"partition", []string{"--format=experimental_csv", "--try-partition-query", "--csv-format=simple"}, "requires primary CSV output"},
-		{"discard", []string{"--format=experimental_csv", "--discard-results", "--csv-format=simple"}, "requires primary CSV output"},
+		{"json-header", []string{"--no-csv-header"}, "require --format=experimental_csv"},
+		{"json-simple", []string{"--csv-format=simple"}, "require --format=experimental_csv"},
+		{"yaml-format", []string{"--format=yaml", "--csv-format=spanner-cli"}, "require --format=experimental_csv"},
+		{"partition", []string{"--format=experimental_csv", "--try-partition-query", "--no-csv-header"}, "require primary CSV output"},
+		{"discard", []string{"--format=experimental_csv", "--discard-results", "--csv-format=simple"}, "require primary CSV output"},
 		{"invalid-format", []string{"--format=experimental_csv", "--csv-format=unknown"}, "--csv-format"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -111,6 +116,33 @@ func TestCSVOptionsRejectBeforeOutputOrClient(t *testing.T) {
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
 				t.Fatalf("invalid arguments created output: %v", err)
 			}
+		})
+	}
+}
+
+func TestCSVNoHeaderStillPublishesPlan(t *testing.T) {
+	for _, omitRows := range []bool{false, true} {
+		t.Run(map[bool]string{false: "redacted", true: "zero-rows"}[omitRows], func(t *testing.T) {
+			startQueryStatsModeServer(t, &queryStatsModeServer{omitValues: omitRows})
+			dir := t.TempDir()
+			rowsPath, planPath := filepath.Join(dir, "rows.csv"), filepath.Join(dir, "plan.json")
+			args := []string{"db", "--project=p", "--instance=i", "--sql=SELECT 1",
+				"--format=experimental_csv", "--no-csv-header", "--query-mode=PROFILE",
+				"--output", rowsPath, "--plan-output", planPath, "--timeout=5s"}
+			if !omitRows {
+				args = append(args, "--redact-rows")
+			}
+			if err := runCLI(t.Context(), args); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(rowsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("CSV = %q, want no bytes", got)
+			}
+			assertPlanEnvelopeFile(t, planPath)
 		})
 	}
 }

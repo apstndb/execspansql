@@ -47,6 +47,8 @@ Flags:
       --format="json"              Output format of the primary document.
       --csv-format=STRING          CSV value formatting: simple (default) or
                                    spanner-cli. Requires --format=experimental_csv.
+      --no-csv-header              Omit the CSV header. Requires
+                                   --format=experimental_csv.
   -o, --output="-"                 Destination of the primary document.
                                    Use - for stdout; /dev/stdout, /dev/stderr,
                                    and /dev/null are mapped in-process.
@@ -179,7 +181,7 @@ Setting `--plan-output` switches from the default combined document to split mod
 | `--plan-format json\|yaml\|text\|dot\|mermaid\|d2\|svg\|png` | follows `--format` when that is `json` or `yaml`, otherwise `json` | Format of the plan artifact. `json`/`yaml` write a `ResultSet` envelope; the others render in-process. |
 | `--discard-results` | off | Do not write the primary document (plan-only). Requires `--plan-output`. |
 
-`--redact-rows` is independent of `--discard-results`: redact still emits metadata and a CSV header; discard writes no primary bytes at all.
+`--redact-rows` is independent of `--discard-results`: redact still emits metadata and, unless `--no-csv-header` is set, a CSV header; discard writes no primary bytes at all.
 
 Path conventions for both `--output` and `--plan-output`:
 
@@ -519,16 +521,17 @@ exit status 1
 
 ### CSV output options
 
-`--format=experimental_csv` uses spanvalue's `SimpleFormatConfig` by default. Existing CSV output stays unchanged unless you select another value format.
+`--format=experimental_csv` uses spanvalue's `SimpleFormatConfig` by default. Existing CSV output stays unchanged unless you select another value format or suppress the header.
 
 - `--csv-format=simple` explicitly selects the default: NUMERIC text as returned by Spanner and tuple-style STRUCT values with field names (for example, `(7 AS i, x AS s)`).
 - `--csv-format=spanner-cli` selects `SpannerCLICompatibleFormatConfig`: NUMERIC trailing zeros are trimmed and STRUCT values use brackets, including inside arrays. This affects CSV cell values; CSV quoting and delimiters are unchanged.
+- `--no-csv-header` omits column names. A zero-row or redacted result then produces no primary bytes; the query is still fully consumed so errors and a requested plan artifact are handled normally.
 
-This option applies equally to read-only queries and committed DML results. It requires `--format=experimental_csv` and cannot be combined with `--try-partition-query` or `--discard-results`.
+These options apply equally to read-only queries and committed DML results. They require `--format=experimental_csv` and cannot be combined with `--try-partition-query` or `--discard-results`.
 
 ```sh
 execspansql "${DATABASE_ID}" --sql='SELECT * FROM Singers' \
-  --format=experimental_csv --csv-format=spanner-cli
+  --format=experimental_csv --csv-format=spanner-cli --no-csv-header
 ```
 
 ## Limitations

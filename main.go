@@ -87,6 +87,7 @@ type opts struct {
 	Priority             string        `name:"priority" enum:"high,low,medium,unspecified" default:"unspecified" help:"Priority for the execute SQL request."`
 	Format               string        `name:"format" enum:"json,yaml,experimental_csv" default:"json" help:"Output format of the primary document."`
 	CSVFormat            string        `name:"csv-format" help:"CSV value formatting: simple (default) or spanner-cli. Requires --format=experimental_csv."`
+	NoCSVHeader          bool          `name:"no-csv-header" help:"Omit the CSV header. Requires --format=experimental_csv."`
 	Output               string        `name:"output" short:"o" default:"-" help:"Destination of the primary document. Use - for stdout; /dev/stdout, /dev/stderr, and /dev/null are mapped in-process."`
 	PlanOutput           string        `name:"plan-output" help:"Write the query-plan artifact here and strip stats.queryPlan from the primary document. Enables split mode."`
 	PlanFormat           string        `name:"plan-format" help:"Format of the plan artifact: json, yaml, text, dot, mermaid, d2, svg, or png. Defaults to --format when that is json or yaml, otherwise json. Requires --plan-output."`
