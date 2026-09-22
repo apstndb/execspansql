@@ -45,6 +45,8 @@ Flags:
                                    WITH_PLAN_AND_STATS, or WITH_STATS.
       --priority="unspecified"     Priority for the execute SQL request.
       --format="json"              Output format of the primary document.
+      --csv-format=STRING          CSV value formatting: simple (default) or
+                                   spanner-cli. Requires --format=experimental_csv.
   -o, --output="-"                 Destination of the primary document.
                                    Use - for stdout; /dev/stdout, /dev/stderr,
                                    and /dev/null are mapped in-process.
@@ -514,6 +516,20 @@ $ execspansql ${DATABASE_ID} --sql='SELECT * FROM Singers JOIN Concerts USING(Si
 exit status 1
 ```
 
+
+### CSV output options
+
+`--format=experimental_csv` uses spanvalue's `SimpleFormatConfig` by default. Existing CSV output stays unchanged unless you select another value format.
+
+- `--csv-format=simple` explicitly selects the default: NUMERIC text as returned by Spanner and tuple-style STRUCT values with field names (for example, `(7 AS i, x AS s)`).
+- `--csv-format=spanner-cli` selects `SpannerCLICompatibleFormatConfig`: NUMERIC trailing zeros are trimmed and STRUCT values use brackets, including inside arrays. This affects CSV cell values; CSV quoting and delimiters are unchanged.
+
+This option applies equally to read-only queries and committed DML results. It requires `--format=experimental_csv` and cannot be combined with `--try-partition-query` or `--discard-results`.
+
+```sh
+execspansql "${DATABASE_ID}" --sql='SELECT * FROM Singers' \
+  --format=experimental_csv --csv-format=spanner-cli
+```
 
 ## Limitations
 

@@ -22,7 +22,7 @@ func (c *preparedCommand) writeResult(ctx context.Context, result *queryResult, 
 	}
 
 	if c.Format == "experimental_csv" {
-		result, err := writeCsvFromRowIter(sinks.primary, result.rowIter, c.RedactRows)
+		result, err := writeCsvFromRowIter(sinks.primary, result.rowIter, c.RedactRows, csvWriterOptions(c.opts)...)
 		if err != nil {
 			return err
 		}
@@ -72,7 +72,7 @@ func (c *preparedCommand) writeResultSet(ctx context.Context, rs *sppb.ResultSet
 	}
 	if sinks.primary != nil {
 		if c.Format == "experimental_csv" {
-			if err := writeCsvFromResultSet(sinks.primary, rs); err != nil {
+			if err := writeCsvFromResultSet(sinks.primary, rs, csvWriterOptions(c.opts)...); err != nil {
 				return err
 			}
 		} else {
