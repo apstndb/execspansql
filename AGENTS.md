@@ -20,7 +20,7 @@ Primary package layout:
 - Build: `go build ./...`
 - Unit/package tests: `go test ./params/... ./jqresult/... ./resultset/...`
 - Full test suite: `go test ./...` (requires emulator/container environment for integration tests)
-- Lint: `golangci-lint run`
+- Lint: `GOTOOLCHAIN=go1.25.13 golangci-lint run` (the CI-pinned linter v2.12.2 is built with go1.26 and panics loading a go1.27 stdlib; pin the toolchain to the `go.mod` 1.25 line)
 - Golden files:
   - Update CSV goldens: `go test -update-golden -run TestExperimentalCsvGolden .`
   - Update YAML/profile goldens: `go test -update-golden -run TestYamlOutputGolden .`

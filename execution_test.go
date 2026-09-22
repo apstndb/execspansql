@@ -66,12 +66,20 @@ func TestDMLResultPublication(t *testing.T) {
 				server := &executionServer{retry: scenario == "retry", failCommit: scenario == "commit_failure"}
 				startQueryStatsModeServer(t, server)
 				path := filepath.Join(t.TempDir(), "result")
-				if scenario == "output_failure" {
-					if err := os.Mkdir(path, 0700); err != nil {
-						t.Fatal(err)
-					}
-				} else if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
+				if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
 					t.Fatal(err)
+				}
+				if scenario == "output_failure" {
+					orig := afterOutputSinksOpen
+					t.Cleanup(func() { afterOutputSinksOpen = orig })
+					afterOutputSinksOpen = func(*outputSinks) {
+						if err := os.Remove(path); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Mkdir(path, 0700); err != nil {
+							t.Fatal(err)
+						}
+					}
 				}
 				err := runCLI(t.Context(), []string{"db", "--project", "p", "--instance", "i",
 					"--sql", "UPDATE T SET V=1 THEN RETURN V", "--format", format, "--output", path, "--timeout", "5s"})
