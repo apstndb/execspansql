@@ -50,13 +50,18 @@ func (c *preparedCommand) writeResult(ctx context.Context, result *queryResult, 
 	if err := printJQ(ctx, c.jqCode, lazy, enc); err != nil {
 		return err
 	}
-	sinks.MarkPrimaryComplete()
 	if !sinks.hasPlan {
+		sinks.MarkPrimaryComplete()
 		return nil
 	}
+	// An early filter can finish before the stream does. Drain is still part
+	// of SQL completion: a later stream error must not publish the partial
+	// primary. Plan rendering after a successful drain is a separate failure
+	// and may publish the primary.
 	if err := lazy.Drain(); err != nil {
 		return err
 	}
+	sinks.MarkPrimaryComplete()
 	drained := lazy.Result()
 	stats, err := drained.StatsProto()
 	if err != nil {
