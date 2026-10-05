@@ -66,10 +66,10 @@ github.com/apstndb/spannerplan v0.3.0 h1:EKB9Iw5iCloWoJXIFUxh93zXIO6NqoAld9fnzzk
 github.com/apstndb/spannerplan v0.3.0/go.mod h1:zVUS187Z4DGaJekIBt2E1JYb9UMKQ7s5ZZo3HOr522E=
 github.com/apstndb/spannerplanviz v0.11.0 h1:vtOZVIuPF9Hm1SFf7dkseXhC/1xM6B4a2H5dRTd4OxQ=
 github.com/apstndb/spannerplanviz v0.11.0/go.mod h1:dpTPxIjSGmNpe5UqV9Nfc67Tx625Z439G/ReqRjE63s=
-github.com/apstndb/spantype v0.3.11 h1:wKue4WLYGT82MH3B3TRSFn8tWIbk1Geczs+5BAEtnK4=
-github.com/apstndb/spantype v0.3.11/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
-github.com/apstndb/spanvalue v0.8.0 h1:wLHl/0m5C6PvRwJOJoz1nRL4qSpS17eS1tW3Pjzcvo8=
-github.com/apstndb/spanvalue v0.8.0/go.mod h1:bqVJYydQf+D0Tux1LtyRlREPVwrVYNG+1usZJ489GTA=
+github.com/apstndb/spantype v0.3.13 h1:FTP3zUpVXMfPlZ3P+1RK6SYHND+96YVht0I+ZHGIzMc=
+github.com/apstndb/spantype v0.3.13/go.mod h1:9eHowE7LcJ155ukCYUyuNzVAw9Ne0GXPXpHmu+iaMyk=
+github.com/apstndb/spanvalue v0.9.1 h1:ks0cudn5Y7hQ1TJ3p3xYNbipI1uWxhTZ3cXXa+oLPB8=
+github.com/apstndb/spanvalue v0.9.1/go.mod h1:Xx9jx5FcLWnp8njIR7bTGWlGNjUz6vt+Ce3cUQ53klI=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
