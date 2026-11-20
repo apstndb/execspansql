@@ -20,7 +20,7 @@ Primary package layout:
 - Build: `go build ./...`
 - Unit/package tests: `go test ./params/... ./jqresult/... ./resultset/...`
 - Full test suite: `go test ./...` (requires emulator/container environment for integration tests)
-- Lint: `GOTOOLCHAIN=go1.25.13 golangci-lint run` (the CI-pinned linter v2.12.2 is built with go1.26 and panics loading a go1.27 stdlib; pin the toolchain to the `go.mod` 1.25 line)
+- Lint: `make lint` (pins Go 1.26.0 because the CI-pinned golangci-lint v2.12.2 cannot load the Go 1.27 standard library)
 - Golden files:
   - Update CSV goldens: `go test -update-golden -run TestExperimentalCsvGolden .`
   - Update YAML/profile goldens: `go test -update-golden -run TestYamlOutputGolden .`
@@ -38,7 +38,7 @@ For fast local checks without Docker dependency, limit to package-level tests as
 - Lint workflow uses `golangci-lint`.
 - `ko` publish workflow builds container images on tag pushes for `v*`.
 - GoReleaser (`.goreleaser.yaml`, v2 schema) publishes cross-platform CLI archives via `.github/workflows/goreleaser.yml` on any tag push; `before.hooks` runs `go mod tidy` only (no `go:generate` in this repo).
-- Release/packaging behavior follows `go.mod` Go version pin (`go 1.25.0`).
+- Release/packaging behavior follows the Go version in `go.mod`.
 
 ## Repository hygiene
 
