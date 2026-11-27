@@ -12,10 +12,8 @@ import (
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/execspansql/internal/planrender"
 	"github.com/apstndb/execspansql/jqresult"
-	svwriter "github.com/apstndb/spanvalue/writer"
 	"golang.org/x/term"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -704,24 +702,4 @@ func renderPlan(ctx context.Context, w io.Writer, format string, metadata *sppb.
 		return errNoQueryPlan
 	}
 	return fmt.Errorf("query succeeded, plan rendering failed: %w", err)
-}
-
-func statsFromWriterResult(r *svwriter.RowIteratorResult) (*sppb.ResultSetStats, error) {
-	if r == nil {
-		return nil, nil
-	}
-	stats := &sppb.ResultSetStats{
-		QueryPlan: r.Stats.QueryPlan,
-	}
-	if r.Stats.QueryStats != nil {
-		qs, err := structpb.NewStruct(r.Stats.QueryStats)
-		if err != nil {
-			return nil, fmt.Errorf("encode query stats: %w", err)
-		}
-		stats.QueryStats = qs
-	}
-	if stats.QueryPlan == nil && stats.QueryStats == nil && stats.RowCount == nil {
-		return nil, nil
-	}
-	return stats, nil
 }

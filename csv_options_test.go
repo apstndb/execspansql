@@ -123,7 +123,8 @@ func TestCSVOptionsRejectBeforeOutputOrClient(t *testing.T) {
 func TestCSVNoHeaderStillPublishesPlan(t *testing.T) {
 	for _, omitRows := range []bool{false, true} {
 		t.Run(map[bool]string{false: "redacted", true: "zero-rows"}[omitRows], func(t *testing.T) {
-			startQueryStatsModeServer(t, &queryStatsModeServer{omitValues: omitRows})
+			// A synthetic DML count should never surface in the read-only CSV plan.
+			startQueryStatsModeServer(t, &queryStatsModeServer{omitValues: omitRows, rowCount: 3})
 			dir := t.TempDir()
 			rowsPath, planPath := filepath.Join(dir, "rows.csv"), filepath.Join(dir, "plan.json")
 			args := []string{"db", "--project=p", "--instance=i", "--sql=SELECT 1",
@@ -142,7 +143,9 @@ func TestCSVNoHeaderStillPublishesPlan(t *testing.T) {
 			if len(got) != 0 {
 				t.Fatalf("CSV = %q, want no bytes", got)
 			}
-			assertPlanEnvelopeFile(t, planPath)
+			if plan := assertPlanEnvelopeFile(t, planPath); plan.GetStats().GetRowCount() != nil {
+				t.Fatalf("read-only CSV plan includes a DML count: %v", plan.GetStats().GetRowCount())
+			}
 		})
 	}
 }

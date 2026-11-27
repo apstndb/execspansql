@@ -112,6 +112,7 @@ func TestQueryStatsResponseReachesOutput(t *testing.T) {
 type queryStatsModeServer struct {
 	sppb.UnimplementedSpannerServer
 	omitValues bool
+	rowCount   int64
 }
 
 func (s *queryStatsModeServer) CreateSession(_ context.Context, req *sppb.CreateSessionRequest) (*sppb.Session, error) {
@@ -142,6 +143,9 @@ func (s *queryStatsModeServer) ExecuteStreamingSql(_ *sppb.ExecuteSqlRequest, st
 		Kind:        sppb.PlanNode_RELATIONAL,
 		DisplayName: "Fake Scan",
 	}}}
+	if s.rowCount != 0 {
+		stats.RowCount = &sppb.ResultSetStats_RowCountExact{RowCountExact: s.rowCount}
+	}
 	return stream.Send(&sppb.PartialResultSet{Stats: stats})
 }
 
@@ -161,7 +165,7 @@ func startQueryStatsModeServer(t *testing.T, server sppb.SpannerServer) {
 	t.Setenv("SPANNER_EMULATOR_HOST", listener.Addr().String())
 }
 
-func assertPlanEnvelopeFile(t *testing.T, planPath string) {
+func assertPlanEnvelopeFile(t *testing.T, planPath string) *sppb.ResultSet {
 	t.Helper()
 	b, err := os.ReadFile(planPath)
 	if err != nil {
@@ -180,6 +184,7 @@ func assertPlanEnvelopeFile(t *testing.T, planPath string) {
 	if len(rs.GetStats().GetQueryPlan().GetPlanNodes()) == 0 {
 		t.Fatalf("plan missing queryPlan.planNodes: %s", b)
 	}
+	return &rs
 }
 
 func TestSplitPlanOutputCLI(t *testing.T) {

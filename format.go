@@ -5,6 +5,7 @@ import (
 
 	sppb "cloud.google.com/go/spanner/apiv1/spannerpb"
 	"github.com/apstndb/execspansql/jqresult"
+	svwriter "github.com/apstndb/spanvalue/writer"
 	"github.com/wader/gojq"
 )
 
@@ -30,7 +31,10 @@ func (c *preparedCommand) writeResult(ctx context.Context, result *queryResult, 
 		if !sinks.hasPlan {
 			return nil
 		}
-		stats, err := statsFromWriterResult(result)
+		// The live CSV path serves read-only queries. Its plan artifact omits
+		// the DML count, which is handled by the materialized output path.
+		result.Stats.RowCount = 0
+		stats, err := result.StatsProto(svwriter.StatsEncodingDefault)
 		if err != nil {
 			return err
 		}
