@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/spanner v1.96.1
 	github.com/alecthomas/kong v1.17.0
 	github.com/apstndb/gsqlutils v0.0.0-20260813143423-9e5dff7c7357
-	github.com/apstndb/memebridge v0.7.0
+	github.com/apstndb/memebridge v0.8.0
 	github.com/apstndb/spanemuboost v0.4.11
 	github.com/apstndb/spaniter v0.3.1
 	github.com/apstndb/spannerotel v0.2.0
@@ -45,7 +45,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.63.0 // indirect
 	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/apstndb/go-tabwrap v0.1.4 // indirect
-	github.com/apstndb/protoyaml v0.1.1 // indirect
+	github.com/apstndb/protoyaml v0.2.0 // indirect
 	github.com/apstndb/spantype v0.3.13 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
